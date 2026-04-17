@@ -1,0 +1,9 @@
+.git
+.gitignore
+*_test.go
+testdata/
+fallback-images/
+data/
+fallback-data/
+LICENSE
+README.md
