@@ -223,6 +223,11 @@ func TestHandler_GetObject_FallbackImage(t *testing.T) {
 	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "image/") {
 		t.Fatalf("content-type = %q, expected image/*", resp.Header.Get("Content-Type"))
 	}
+	cd := resp.Header.Get("Content-Disposition")
+	want := `inline; filename="photo.jpg"`
+	if cd != want {
+		t.Fatalf("Content-Disposition = %q, want %q", cd, want)
+	}
 }
 
 func TestHandler_HeadObject_FallbackImage(t *testing.T) {
