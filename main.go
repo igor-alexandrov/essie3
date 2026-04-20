@@ -18,7 +18,11 @@ func main() {
 	fallbackDataDir := getenv("FALLBACK_DATA_DIR", "./fallback-data")
 
 	storage := NewStorage(dataDir)
-	fallback, err := NewFallback(fallbackDataDir, DefaultInlineExtensions)
+	inlineExts := DefaultInlineExtensions
+	if v, ok := os.LookupEnv("FALLBACK_INLINE_EXTENSIONS"); ok {
+		inlineExts = ParseExtList(v)
+	}
+	fallback, err := NewFallback(fallbackDataDir, inlineExts)
 	if err != nil {
 		log.Fatalf("failed to load fallback data: %v", err)
 	}
