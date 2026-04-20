@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -30,6 +31,7 @@ func main() {
 	fmt.Printf("essie3 starting on :%s\n", port)
 	fmt.Printf("  data:     %s\n", dataDir)
 	fmt.Printf("  fallback: %s (%d placeholders)\n", fallbackDataDir, fallback.Count())
+	fmt.Printf("  inline extensions: %s\n", strings.Join(inlineExts, ", "))
 
 	srv := &http.Server{
 		Addr:              ":" + port,
