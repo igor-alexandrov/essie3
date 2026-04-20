@@ -6,7 +6,7 @@ import (
 )
 
 func TestFallbackLoad(t *testing.T) {
-	fb, err := NewFallback("testdata/fallback")
+	fb, err := NewFallback("testdata/fallback", DefaultInlineExtensions)
 	if err != nil {
 		t.Fatalf("NewFallback: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestFallbackLoad(t *testing.T) {
 
 func TestFallbackLoad_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	fb, err := NewFallback(dir)
+	fb, err := NewFallback(dir, DefaultInlineExtensions)
 	if err != nil {
 		t.Fatalf("NewFallback: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestFallbackLoad_EmptyDir(t *testing.T) {
 }
 
 func TestFallbackSelect_Deterministic(t *testing.T) {
-	fb, _ := NewFallback("testdata/fallback")
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
 
 	img1 := fb.Select("some/key.jpg")
 	img2 := fb.Select("some/key.jpg")
@@ -44,7 +44,7 @@ func TestFallbackSelect_Deterministic(t *testing.T) {
 }
 
 func TestFallbackSelect_DifferentKeys(t *testing.T) {
-	fb, _ := NewFallback("testdata/fallback")
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
 
 	img1 := fb.Select("key-a.jpg")
 	img2 := fb.Select("key-b.jpg")
@@ -54,7 +54,7 @@ func TestFallbackSelect_DifferentKeys(t *testing.T) {
 }
 
 func TestFallbackSelect_MatchesExtension(t *testing.T) {
-	fb, _ := NewFallback("testdata/fallback")
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
 
 	// PDF key should get the PDF placeholder
 	p := fb.Select("document/report.pdf")
@@ -76,7 +76,7 @@ func TestFallbackSelect_MatchesExtension(t *testing.T) {
 }
 
 func TestFallbackSelect_NilForUnmatchedExtension(t *testing.T) {
-	fb, _ := NewFallback("testdata/fallback")
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
 
 	p := fb.Select("data/export.csv")
 	if p != nil {
@@ -86,7 +86,7 @@ func TestFallbackSelect_NilForUnmatchedExtension(t *testing.T) {
 
 func TestFallbackSelect_NoImages(t *testing.T) {
 	dir := t.TempDir()
-	fb, _ := NewFallback(dir)
+	fb, _ := NewFallback(dir, DefaultInlineExtensions)
 
 	img := fb.Select("any.jpg")
 	if img != nil {
@@ -131,5 +131,51 @@ func TestDefaultInlineExtensions_CoversCurrentFallbackSet(t *testing.T) {
 		if !set[e] {
 			t.Errorf("DefaultInlineExtensions missing %q", e)
 		}
+	}
+}
+
+func TestFallbackDisposition_InlineForDefaults(t *testing.T) {
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
+	got := fb.Disposition("photos/sunset.jpg")
+	want := `inline; filename="sunset.jpg"`
+	if got != want {
+		t.Fatalf("Disposition = %q, want %q", got, want)
+	}
+}
+
+func TestFallbackDisposition_AttachmentForUnlisted(t *testing.T) {
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
+	got := fb.Disposition("docs/report.docx")
+	want := `attachment; filename="report.docx"`
+	if got != want {
+		t.Fatalf("Disposition = %q, want %q", got, want)
+	}
+}
+
+func TestFallbackDisposition_CustomList(t *testing.T) {
+	// Explicit empty list → everything is attachment.
+	fb, _ := NewFallback("testdata/fallback", []string{})
+	got := fb.Disposition("images/a.jpg")
+	want := `attachment; filename="a.jpg"`
+	if got != want {
+		t.Fatalf("Disposition = %q, want %q", got, want)
+	}
+
+	// Custom list adds docx as inline.
+	fb2, _ := NewFallback("testdata/fallback", []string{".docx"})
+	got = fb2.Disposition("reports/q1.docx")
+	want = `inline; filename="q1.docx"`
+	if got != want {
+		t.Fatalf("Disposition custom = %q, want %q", got, want)
+	}
+}
+
+func TestFallbackDisposition_JpegAliasedToJpg(t *testing.T) {
+	// Inline list contains .jpg; requesting .jpeg should still be inline.
+	fb, _ := NewFallback("testdata/fallback", []string{".jpg"})
+	got := fb.Disposition("pic.jpeg")
+	want := `inline; filename="pic.jpeg"`
+	if got != want {
+		t.Fatalf("Disposition = %q, want %q", got, want)
 	}
 }

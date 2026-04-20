@@ -14,7 +14,7 @@ func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	dataDir := t.TempDir()
 	s := NewStorage(dataDir)
-	fb, _ := NewFallback("testdata/fallback")
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
 	h := NewHandler(s, fb)
 	return httptest.NewServer(h)
 }

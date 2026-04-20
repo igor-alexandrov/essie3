@@ -18,7 +18,7 @@ func main() {
 	fallbackDataDir := getenv("FALLBACK_DATA_DIR", "./fallback-data")
 
 	storage := NewStorage(dataDir)
-	fallback, err := NewFallback(fallbackDataDir)
+	fallback, err := NewFallback(fallbackDataDir, DefaultInlineExtensions)
 	if err != nil {
 		log.Fatalf("failed to load fallback data: %v", err)
 	}

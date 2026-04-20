@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"hash/fnv"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -39,12 +41,19 @@ type Placeholder struct {
 }
 
 type Fallback struct {
-	all   []*Placeholder
-	byExt map[string][]*Placeholder
+	all        []*Placeholder
+	byExt      map[string][]*Placeholder
+	inlineExts map[string]bool
 }
 
-func NewFallback(dir string) (*Fallback, error) {
-	fb := &Fallback{byExt: make(map[string][]*Placeholder)}
+func NewFallback(dir string, inlineExts []string) (*Fallback, error) {
+	fb := &Fallback{
+		byExt:      make(map[string][]*Placeholder),
+		inlineExts: make(map[string]bool, len(inlineExts)),
+	}
+	for _, e := range inlineExts {
+		fb.inlineExts[normalizeExt(normalizeExtInput(e))] = true
+	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -62,14 +71,14 @@ func NewFallback(dir string) (*Fallback, error) {
 		if !placeholderExtensions[ext] {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		body, err := os.ReadFile(path)
+		fullPath := filepath.Join(dir, entry.Name())
+		body, err := os.ReadFile(fullPath)
 		if err != nil {
-			log.Printf("fallback: skip %s: %v", path, err)
+			log.Printf("fallback: skip %s: %v", fullPath, err)
 			continue
 		}
 		p := &Placeholder{
-			Path:        path,
+			Path:        fullPath,
 			Body:        body,
 			ContentType: http.DetectContentType(body),
 		}
@@ -79,6 +88,20 @@ func NewFallback(dir string) (*Fallback, error) {
 	}
 
 	return fb, nil
+}
+
+// Disposition returns the Content-Disposition header value for a fallback
+// response to the given key. Extensions in the inline set are served
+// inline; everything else is an attachment. The filename is the basename
+// of the requested key so downloads preserve the caller's intent.
+func (fb *Fallback) Disposition(key string) string {
+	name := path.Base(key)
+	ext := normalizeExt(strings.ToLower(filepath.Ext(key)))
+	kind := "attachment"
+	if fb.inlineExts[ext] {
+		kind = "inline"
+	}
+	return fmt.Sprintf("%s; filename=%q", kind, name)
 }
 
 func (fb *Fallback) Count() int {
