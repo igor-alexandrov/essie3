@@ -49,11 +49,12 @@ docker run --rm -p 9000:9000 \
 
 All configuration via environment variables:
 
-| Variable            | Default            | Description                       |
-| ------------------- | ------------------ | --------------------------------- |
-| `PORT`              | `9000`             | HTTP port to listen on            |
-| `DATA_DIR`          | `./data`           | Where uploaded objects are stored |
-| `FALLBACK_DATA_DIR` | `./fallback-data`  | Directory of fallback placeholders|
+| Variable                     | Default                                                     | Description                       |
+| ---------------------------- | ----------------------------------------------------------- | --------------------------------- |
+| `PORT`                       | `9000`                                                      | HTTP port to listen on            |
+| `DATA_DIR`                   | `./data`                                                    | Where uploaded objects are stored |
+| `FALLBACK_DATA_DIR`          | `./fallback-data`                                           | Directory of fallback placeholders|
+| `FALLBACK_INLINE_EXTENSIONS` | `.jpg,.jpeg,.png,.gif,.webp,.pdf,.mp4,.mov,.webm,.avi`    | Comma-separated extensions served inline on fallback responses. Everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. |
 
 ## Usage
 
