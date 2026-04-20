@@ -90,10 +90,6 @@ func NewFallback(dir string, inlineExts []string) (*Fallback, error) {
 	return fb, nil
 }
 
-// Disposition returns the Content-Disposition header value for a fallback
-// response to the given key. Extensions in the inline set are served
-// inline; everything else is an attachment. The filename is the basename
-// of the requested key so downloads preserve the caller's intent.
 // asciiFilename replaces characters that are not safe in an HTTP
 // quoted-string (anything outside printable ASCII, plus the quote and
 // backslash characters that would need escaping) with underscores.
@@ -114,9 +110,13 @@ func asciiFilename(s string) string {
 	return b.String()
 }
 
+// Disposition returns the Content-Disposition header value for a fallback
+// response to the given key. Extensions in the inline set are served
+// inline; everything else is an attachment. The filename is the basename
+// of the requested key so downloads preserve the caller's intent.
 func (fb *Fallback) Disposition(key string) string {
 	name := path.Base(key)
-	ext := normalizeExt(strings.ToLower(filepath.Ext(key)))
+	ext := normalizeExt(strings.ToLower(path.Ext(key)))
 	kind := "attachment"
 	if fb.inlineExts[ext] {
 		kind = "inline"
