@@ -94,6 +94,26 @@ func NewFallback(dir string, inlineExts []string) (*Fallback, error) {
 // response to the given key. Extensions in the inline set are served
 // inline; everything else is an attachment. The filename is the basename
 // of the requested key so downloads preserve the caller's intent.
+// asciiFilename replaces characters that are not safe in an HTTP
+// quoted-string (anything outside printable ASCII, plus the quote and
+// backslash characters that would need escaping) with underscores.
+// This keeps Content-Disposition values RFC 6266-compatible without
+// pulling in RFC 5987 filename*= support — a follow-up for when we
+// need to preserve non-ASCII filenames.
+func asciiFilename(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x20 && c <= 0x7E && c != '"' && c != '\\' {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
 func (fb *Fallback) Disposition(key string) string {
 	name := path.Base(key)
 	ext := normalizeExt(strings.ToLower(filepath.Ext(key)))
@@ -101,7 +121,7 @@ func (fb *Fallback) Disposition(key string) string {
 	if fb.inlineExts[ext] {
 		kind = "inline"
 	}
-	return fmt.Sprintf("%s; filename=%q", kind, name)
+	return fmt.Sprintf(`%s; filename="%s"`, kind, asciiFilename(name))
 }
 
 func (fb *Fallback) Count() int {

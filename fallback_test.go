@@ -179,3 +179,22 @@ func TestFallbackDisposition_JpegAliasedToJpg(t *testing.T) {
 		t.Fatalf("Disposition = %q, want %q", got, want)
 	}
 }
+
+func TestFallbackDisposition_SanitizesNonASCII(t *testing.T) {
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
+
+	cases := []struct {
+		key  string
+		want string
+	}{
+		{"photos/café.jpg", `inline; filename="caf__.jpg"`},
+		{"weird/\"name\".jpg", `inline; filename="_name_.jpg"`},
+		{"ctl/\x01name.jpg", `inline; filename="_name.jpg"`},
+	}
+	for _, c := range cases {
+		got := fb.Disposition(c.key)
+		if got != c.want {
+			t.Errorf("Disposition(%q) = %q, want %q", c.key, got, c.want)
+		}
+	}
+}
