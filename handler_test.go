@@ -242,6 +242,11 @@ func TestHandler_HeadObject_FallbackImage(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200 fallback for HEAD, got %d", resp.StatusCode)
 	}
+	cd := resp.Header.Get("Content-Disposition")
+	want := `inline; filename="photo.jpg"`
+	if cd != want {
+		t.Fatalf("Content-Disposition = %q, want %q", cd, want)
+	}
 }
 
 func TestHandler_GetObject_FallbackForAnyMissingKey(t *testing.T) {

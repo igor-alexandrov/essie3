@@ -168,6 +168,7 @@ func (h *Handler) handleHeadObject(w http.ResponseWriter, bucket, key string) {
 		if p := h.fallback.Select(key); p != nil {
 			w.Header().Set("Content-Type", p.ContentType)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
+			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
