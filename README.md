@@ -33,16 +33,26 @@ versioning, no real `ListObjects`.
 go run .
 ```
 
-### With Docker
+### With Docker Compose
+
+```yaml
+services:
+  essie3:
+    image: igoraleksandrov/essie3:latest
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./data:/data
+      - ./fallback-data:/fallback-data
+    environment:
+      DATA_DIR: /data
+      FALLBACK_DATA_DIR: /fallback-data
+```
+
+Then run:
 
 ```sh
-docker build -t essie3 .
-docker run --rm -p 9000:9000 \
-  -v $PWD/data:/data \
-  -v $PWD/fallback-images:/fallback \
-  -e DATA_DIR=/data \
-  -e FALLBACK_DATA_DIR=/fallback \
-  essie3
+docker compose up
 ```
 
 ### Configuration
