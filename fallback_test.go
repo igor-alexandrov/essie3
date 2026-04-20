@@ -103,6 +103,7 @@ func TestParseExtList(t *testing.T) {
 		{"jpg", []string{".jpg"}},
 		{".jpg", []string{".jpg"}},
 		{"JPG", []string{".jpg"}},
+		{"jpeg", []string{".jpeg"}},
 		{" .jpg , png ,  WEBP ", []string{".jpg", ".png", ".webp"}},
 		{",,", []string{}},
 	}

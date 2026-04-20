@@ -106,8 +106,11 @@ func normalizeExtInput(ext string) string {
 }
 
 // ParseExtList splits a comma-separated list of extensions and normalizes
-// each one. Returns a non-nil slice so callers can distinguish "unset"
-// (nil) from "explicitly empty".
+// each one to lowercase, dot-prefixed form (e.g. "JPG" → ".jpg"). Alias
+// resolution (e.g. ".jpeg" → ".jpg") is the caller's responsibility —
+// consumers like NewFallback apply it when interpreting the list.
+// Returns a non-nil slice so callers can distinguish "unset" (nil) from
+// "explicitly empty".
 func ParseExtList(s string) []string {
 	out := []string{}
 	for _, part := range strings.Split(s, ",") {
