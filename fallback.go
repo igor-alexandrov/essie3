@@ -9,6 +9,16 @@ import (
 	"strings"
 )
 
+// DefaultInlineExtensions is the set of extensions served with
+// Content-Disposition: inline when a fallback placeholder is returned.
+// Extensions outside this set (e.g. future docx/xlsx placeholders) are
+// served as attachments so browsers prompt a download.
+var DefaultInlineExtensions = []string{
+	".jpg", ".jpeg", ".png", ".gif", ".webp",
+	".pdf",
+	".mp4", ".mov", ".webm", ".avi",
+}
+
 var placeholderExtensions = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true,
 	".gif": true, ".webp": true,
@@ -80,6 +90,32 @@ func normalizeExt(ext string) string {
 		return alias
 	}
 	return ext
+}
+
+// normalizeExtInput accepts ".jpg", "jpg", " JPG " and returns ".jpg".
+// Empty/whitespace input returns "".
+func normalizeExtInput(ext string) string {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	if ext == "" {
+		return ""
+	}
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	return ext
+}
+
+// ParseExtList splits a comma-separated list of extensions and normalizes
+// each one. Returns a non-nil slice so callers can distinguish "unset"
+// (nil) from "explicitly empty".
+func ParseExtList(s string) []string {
+	out := []string{}
+	for _, part := range strings.Split(s, ",") {
+		if e := normalizeExtInput(part); e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (fb *Fallback) Select(key string) *Placeholder {

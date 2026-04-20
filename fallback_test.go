@@ -93,3 +93,42 @@ func TestFallbackSelect_NoImages(t *testing.T) {
 		t.Fatal("expected nil when no fallback images")
 	}
 }
+
+func TestParseExtList(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", []string{}},
+		{"jpg", []string{".jpg"}},
+		{".jpg", []string{".jpg"}},
+		{"JPG", []string{".jpg"}},
+		{" .jpg , png ,  WEBP ", []string{".jpg", ".png", ".webp"}},
+		{",,", []string{}},
+	}
+	for _, c := range cases {
+		got := ParseExtList(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("ParseExtList(%q) = %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("ParseExtList(%q)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+			}
+		}
+	}
+}
+
+func TestDefaultInlineExtensions_CoversCurrentFallbackSet(t *testing.T) {
+	want := []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".mp4", ".mov", ".webm", ".avi"}
+	set := map[string]bool{}
+	for _, e := range DefaultInlineExtensions {
+		set[e] = true
+	}
+	for _, e := range want {
+		if !set[e] {
+			t.Errorf("DefaultInlineExtensions missing %q", e)
+		}
+	}
+}
