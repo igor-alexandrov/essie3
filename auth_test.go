@@ -307,3 +307,42 @@ func TestHandlerAuth_Reads(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestHandlerAuth_BucketOps(t *testing.T) {
+	const key = "AKIATEST"
+	srv := testServerWithAuth(t, AuthConfig{AccessKey: key})
+	defer srv.Close()
+
+	// Create bucket without auth → 403
+	req, _ := http.NewRequest("PUT", srv.URL+"/b", nil)
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("create bucket unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// HEAD bucket without auth → 403
+	req, _ = http.NewRequest("HEAD", srv.URL+"/b", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("head bucket unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// GET bucket (list) without auth → 403
+	req, _ = http.NewRequest("GET", srv.URL+"/b", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("get bucket unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create bucket with right key → 200
+	req, _ = http.NewRequest("PUT", srv.URL+"/b", nil)
+	req.Header.Set("Authorization", sigV4HeaderForKey(key))
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("create bucket authed = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

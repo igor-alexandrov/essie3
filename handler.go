@@ -56,6 +56,10 @@ func (h *Handler) setCORS(w http.ResponseWriter) {
 func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	switch r.Method {
 	case http.MethodPut:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if err := h.storage.CreateBucket(bucket); err != nil {
 			writeXMLError(w, http.StatusBadRequest, "InvalidBucketName", err.Error(), bucket, "")
 			return
@@ -64,17 +68,24 @@ func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket st
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><CreateBucketConfiguration/>`)
 	case http.MethodHead:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if h.storage.BucketExists(bucket) {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	case http.MethodGet:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if !h.storage.BucketExists(bucket) {
 			writeNoSuchBucket(w, bucket)
 			return
 		}
-		// ListObjects stub — return empty list.
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>%s</Name></ListBucketResult>`, bucket)
