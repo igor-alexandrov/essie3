@@ -126,8 +126,8 @@ ESSIE3_ACCESS_KEY=AKIATEST go run .
 curl -i http://localhost:9000/mybucket/key
 
 # Wrong key → 403 InvalidAccessKeyId
-aws --endpoint-url http://localhost:9000 \
-    --no-sign-request s3 ls s3://mybucket
+AWS_ACCESS_KEY_ID=WRONGKEY AWS_SECRET_ACCESS_KEY=anything \
+aws --endpoint-url http://localhost:9000 s3 ls s3://mybucket
 
 # Correct key → served normally
 AWS_ACCESS_KEY_ID=AKIATEST AWS_SECRET_ACCESS_KEY=anything \
