@@ -228,3 +228,82 @@ func TestHandlerAuth_Writes(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestHandlerAuth_Reads(t *testing.T) {
+	const key = "AKIATEST"
+	srv := testServerWithAuth(t, AuthConfig{AccessKey: key})
+	defer srv.Close()
+
+	auth := func(req *http.Request) { req.Header.Set("Authorization", sigV4HeaderForKey(key)) }
+
+	// Setup: create bucket, put one private object and one public-read object.
+	mb, _ := http.NewRequest("PUT", srv.URL+"/b", nil)
+	auth(mb)
+	http.DefaultClient.Do(mb)
+
+	priv, _ := http.NewRequest("PUT", srv.URL+"/b/private.txt", bytes.NewReader([]byte("secret")))
+	auth(priv)
+	http.DefaultClient.Do(priv)
+
+	pub, _ := http.NewRequest("PUT", srv.URL+"/b/public.txt", bytes.NewReader([]byte("hello")))
+	auth(pub)
+	pub.Header.Set("x-amz-acl", "public-read")
+	http.DefaultClient.Do(pub)
+
+	// GET private unauth → 403
+	req, _ := http.NewRequest("GET", srv.URL+"/b/private.txt", nil)
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("GET private unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// GET public-read unauth → 200
+	req, _ = http.NewRequest("GET", srv.URL+"/b/public.txt", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("GET public unauth = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "hello" {
+		t.Errorf("GET public body = %q, want %q", body, "hello")
+	}
+
+	// GET public-read with WRONG key → 403 InvalidAccessKeyId (broken client not demoted to anonymous)
+	req, _ = http.NewRequest("GET", srv.URL+"/b/public.txt", nil)
+	req.Header.Set("Authorization", sigV4HeaderForKey("AKIAWRONG"))
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("GET public wrong-key = %d, want 403", resp.StatusCode)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "<Code>InvalidAccessKeyId</Code>") {
+		t.Errorf("GET public wrong-key body = %s, want InvalidAccessKeyId", body)
+	}
+
+	// HEAD private unauth → 403
+	req, _ = http.NewRequest("HEAD", srv.URL+"/b/private.txt", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("HEAD private unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// HEAD public unauth → 200
+	req, _ = http.NewRequest("HEAD", srv.URL+"/b/public.txt", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("HEAD public unauth = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// GET nonexistent unauth → 403 (masks existence — same as private)
+	req, _ = http.NewRequest("GET", srv.URL+"/b/missing.txt", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("GET missing unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

@@ -98,9 +98,9 @@ func (h *Handler) handleObject(w http.ResponseWriter, r *http.Request, bucket, k
 			h.handlePutObject(w, r, bucket, key)
 		}
 	case http.MethodGet:
-		h.handleGetObject(w, bucket, key)
+		h.handleGetObject(w, r, bucket, key)
 	case http.MethodHead:
-		h.handleHeadObject(w, bucket, key)
+		h.handleHeadObject(w, r, bucket, key)
 	case http.MethodDelete:
 		if e := h.auth.authorize(r, opWrite, ""); e != nil {
 			writeAuthError(w, e, bucket, key)
@@ -145,10 +145,22 @@ func (h *Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
-	obj, err := h.storage.GetObject(bucket, key)
-	if err != nil {
+func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	obj, objErr := h.storage.GetObject(bucket, key)
+
+	var acl string
+	if objErr == nil {
+		acl = obj.Meta.ACL
+	}
+
+	authErr := h.auth.authorize(r, opRead, acl)
+
+	if objErr != nil {
 		if p := h.fallback.Select(key); p != nil {
+			if authErr != nil && !h.auth.FallbackPublic {
+				writeAuthError(w, authErr, bucket, key)
+				return
+			}
 			w.Header().Set("Content-Type", p.ContentType)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
@@ -156,7 +168,16 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
 			w.Write(p.Body)
 			return
 		}
+		if authErr != nil {
+			writeAuthError(w, authErr, bucket, key)
+			return
+		}
 		writeNoSuchKey(w, bucket, key)
+		return
+	}
+
+	if authErr != nil {
+		writeAuthError(w, authErr, bucket, key)
 		return
 	}
 
@@ -171,17 +192,38 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
 	w.Write(obj.Body)
 }
 
-func (h *Handler) handleHeadObject(w http.ResponseWriter, bucket, key string) {
-	meta, err := h.storage.HeadObject(bucket, key)
-	if err != nil {
+func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	meta, metaErr := h.storage.HeadObject(bucket, key)
+
+	var acl string
+	if metaErr == nil {
+		acl = meta.ACL
+	}
+
+	authErr := h.auth.authorize(r, opRead, acl)
+
+	if metaErr != nil {
 		if p := h.fallback.Select(key); p != nil {
+			if authErr != nil && !h.auth.FallbackPublic {
+				writeAuthError(w, authErr, bucket, key)
+				return
+			}
 			w.Header().Set("Content-Type", p.ContentType)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		if authErr != nil {
+			writeAuthError(w, authErr, bucket, key)
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if authErr != nil {
+		writeAuthError(w, authErr, bucket, key)
 		return
 	}
 
