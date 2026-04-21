@@ -71,3 +71,58 @@ func (c AuthConfig) checkIdentity(r *http.Request) authResult {
 	}
 	return authMalformed
 }
+
+type op int
+
+const (
+	opRead op = iota
+	opWrite
+)
+
+// authError carries the HTTP status and S3 error code so the caller can
+// translate a denial into a proper S3-shaped XML error response.
+type authError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *authError) Error() string {
+	return e.code + ": " + e.message
+}
+
+// authorize runs the full auth decision: identity check, then op + ACL
+// rules. Returns nil on allow; *authError on deny.
+func (c AuthConfig) authorize(r *http.Request, o op, objectACL string) *authError {
+	switch c.checkIdentity(r) {
+	case authNotRequired, authOK:
+		return nil
+	case authMalformed:
+		return &authError{
+			status:  http.StatusBadRequest,
+			code:    "InvalidArgument",
+			message: "Malformed Authorization header",
+		}
+	case authWrongKey:
+		return &authError{
+			status:  http.StatusForbidden,
+			code:    "InvalidAccessKeyId",
+			message: "The access key ID you provided does not exist.",
+		}
+	case authMissing:
+		if o == opRead && objectACL == "public-read" {
+			return nil
+		}
+		return &authError{
+			status:  http.StatusForbidden,
+			code:    "AccessDenied",
+			message: "Access Denied",
+		}
+	}
+	// Unreachable: every authResult value handled above.
+	return &authError{
+		status:  http.StatusInternalServerError,
+		code:    "InternalError",
+		message: "auth state error",
+	}
+}
