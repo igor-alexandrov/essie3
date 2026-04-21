@@ -88,6 +88,10 @@ func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket st
 func (h *Handler) handleObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	switch r.Method {
 	case http.MethodPut:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, key)
+			return
+		}
 		if copySource := r.Header.Get("x-amz-copy-source"); copySource != "" {
 			h.handleCopyObject(w, bucket, key, copySource)
 		} else {
@@ -98,6 +102,10 @@ func (h *Handler) handleObject(w http.ResponseWriter, r *http.Request, bucket, k
 	case http.MethodHead:
 		h.handleHeadObject(w, bucket, key)
 	case http.MethodDelete:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, key)
+			return
+		}
 		h.storage.DeleteObject(bucket, key)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -204,6 +212,10 @@ func (h *Handler) handleCopyObject(w http.ResponseWriter, dstBucket, dstKey, cop
 }
 
 func (h *Handler) handlePostObject(w http.ResponseWriter, r *http.Request, bucket string) {
+	if e := h.auth.authorize(r, opWrite, ""); e != nil {
+		writeAuthError(w, e, bucket, "")
+		return
+	}
 	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
 		writeXMLError(w, http.StatusBadRequest, "MalformedPOSTRequest", err.Error(), bucket, "")
 		return

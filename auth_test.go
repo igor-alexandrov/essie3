@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -123,4 +127,104 @@ func TestAuthorize(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sigV4HeaderForKey returns a syntactically valid SigV4 Authorization
+// header. The signature is never checked, only the Credential key.
+func sigV4HeaderForKey(key string) string {
+	return "AWS4-HMAC-SHA256 Credential=" + key + "/20260420/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc123"
+}
+
+func TestHandlerAuth_Writes(t *testing.T) {
+	const key = "AKIATEST"
+	srv := testServerWithAuth(t, AuthConfig{AccessKey: key})
+	defer srv.Close()
+
+	// PUT without auth → 403 AccessDenied
+	req, _ := http.NewRequest("PUT", srv.URL+"/mybucket/k", bytes.NewReader([]byte("hello")))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 403 {
+		t.Fatalf("PUT unauth status = %d, want 403", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "<Code>AccessDenied</Code>") {
+		t.Fatalf("PUT unauth body = %s, want AccessDenied", body)
+	}
+
+	// PUT with wrong key → 403 InvalidAccessKeyId
+	req, _ = http.NewRequest("PUT", srv.URL+"/mybucket/k", bytes.NewReader([]byte("hello")))
+	req.Header.Set("Authorization", sigV4HeaderForKey("AKIAWRONG"))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 403 {
+		t.Fatalf("PUT wrong-key status = %d, want 403", resp.StatusCode)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "<Code>InvalidAccessKeyId</Code>") {
+		t.Fatalf("PUT wrong-key body = %s, want InvalidAccessKeyId", body)
+	}
+
+	// PUT with right key → 200 (after creating bucket)
+	makeBucket, _ := http.NewRequest("PUT", srv.URL+"/mybucket", nil)
+	makeBucket.Header.Set("Authorization", sigV4HeaderForKey(key))
+	http.DefaultClient.Do(makeBucket)
+
+	req, _ = http.NewRequest("PUT", srv.URL+"/mybucket/k", bytes.NewReader([]byte("hello")))
+	req.Header.Set("Authorization", sigV4HeaderForKey(key))
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT authed status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// DELETE without auth → 403
+	req, _ = http.NewRequest("DELETE", srv.URL+"/mybucket/k", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 403 {
+		t.Fatalf("DELETE unauth status = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// COPY without auth → 403
+	req, _ = http.NewRequest("PUT", srv.URL+"/mybucket/copy", nil)
+	req.Header.Set("x-amz-copy-source", "/mybucket/k")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 403 {
+		t.Fatalf("COPY unauth status = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// POST form without auth → 403
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("key", "uploads/f.txt")
+	fw, _ := mw.CreateFormFile("file", "f.txt")
+	fw.Write([]byte("hi"))
+	mw.Close()
+	req, _ = http.NewRequest("POST", srv.URL+"/mybucket", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 403 {
+		t.Fatalf("POST unauth status = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
