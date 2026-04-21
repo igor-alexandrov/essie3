@@ -346,3 +346,41 @@ func TestHandlerAuth_BucketOps(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+func TestHandlerAuth_FallbackPublic(t *testing.T) {
+	const key = "AKIATEST"
+
+	// Case 1: FallbackPublic=false, unauth GET for missing key → 403 (no fallback served).
+	srv := testServerWithAuth(t, AuthConfig{AccessKey: key, FallbackPublic: false})
+	req, _ := http.NewRequest("GET", srv.URL+"/b/missing.jpg", nil)
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != 403 {
+		t.Errorf("fallback private unauth = %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+	srv.Close()
+
+	// Case 2: FallbackPublic=true, unauth GET for missing key → 200 (fallback served).
+	srv = testServerWithAuth(t, AuthConfig{AccessKey: key, FallbackPublic: true})
+	req, _ = http.NewRequest("GET", srv.URL+"/b/missing.jpg", nil)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("fallback public unauth = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "image/") {
+		t.Errorf("fallback public content-type = %q, want image/*", got)
+	}
+	resp.Body.Close()
+	srv.Close()
+
+	// Case 3: Either config, authed GET for missing key → 200 (fallback served).
+	srv = testServerWithAuth(t, AuthConfig{AccessKey: key, FallbackPublic: false})
+	req, _ = http.NewRequest("GET", srv.URL+"/b/missing.jpg", nil)
+	req.Header.Set("Authorization", sigV4HeaderForKey(key))
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != 200 {
+		t.Errorf("fallback authed (private mode) = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	srv.Close()
+}
