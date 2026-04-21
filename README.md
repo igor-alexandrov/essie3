@@ -22,8 +22,10 @@ yet, so your UI doesn't render broken images.
 - Path-traversal protection on bucket and key names
 - Graceful shutdown on `SIGINT` / `SIGTERM`
 
-This is **not** a production S3 replacement — no auth, no signing, no
-versioning, no real `ListObjects`.
+This is **not** a production S3 replacement — no SigV4 signature
+verification, no versioning, no real `ListObjects`. (Optional
+access-key auth is available for tests that need to exercise the
+auth-failure path; see the `ESSIE3_ACCESS_KEY` env var below.)
 
 ## Running
 
@@ -65,6 +67,8 @@ All configuration via environment variables:
 | `DATA_DIR`                   | `./data`          | Where uploaded objects are stored |
 | `FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of fallback placeholders|
 | `FALLBACK_INLINE_EXTENSIONS` | `.jpg`, `.jpeg`<br>`.png`, `.gif`, `.webp`<br>`.pdf`<br>`.mp4`, `.mov`, `.webm`, `.avi` | Comma-separated extensions served inline on fallback responses; everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. Example: `FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf` |
+| `ESSIE3_ACCESS_KEY`          | *(unset)*         | When set, essie3 requires requests to present this key in the `Authorization` header's SigV4 `Credential=` portion. Signatures are not verified — only the access-key string is compared. When unset, all requests are served anonymously (default behavior). |
+| `ESSIE3_FALLBACK_PUBLIC`     | `false`           | Only relevant when `ESSIE3_ACCESS_KEY` is set. `true` → fallback placeholders are served anonymously even without credentials. `false` → fallbacks follow the same auth check as real objects. |
 
 ## Usage
 
@@ -107,6 +111,30 @@ curl -X POST http://localhost:9000/mybucket \
   -F "key=uploads/photo.jpg" \
   -F "file=@photo.jpg"
 ```
+
+## Auth (optional)
+
+essie3 is unauthenticated by default. Set `ESSIE3_ACCESS_KEY` to require
+a specific access key on incoming requests — useful for integration
+tests that assert "unauthenticated requests get 403." Only the access
+key is compared; signatures are not verified.
+
+```sh
+ESSIE3_ACCESS_KEY=AKIATEST go run .
+
+# Unauthenticated request → 403 AccessDenied
+curl -i http://localhost:9000/mybucket/key
+
+# Wrong key → 403 InvalidAccessKeyId
+aws --endpoint-url http://localhost:9000 \
+    --no-sign-request s3 ls s3://mybucket
+
+# Correct key → served normally
+AWS_ACCESS_KEY_ID=AKIATEST AWS_SECRET_ACCESS_KEY=anything \
+aws --endpoint-url http://localhost:9000 s3 ls s3://mybucket
+```
+
+Objects stored with `x-amz-acl: public-read` are readable without credentials even when auth is enabled.
 
 ## Fallback placeholders
 
