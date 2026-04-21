@@ -28,14 +28,24 @@ func main() {
 		log.Fatalf("failed to load fallback data: %v", err)
 	}
 
+	auth := AuthConfig{
+		AccessKey:      os.Getenv("ESSIE3_ACCESS_KEY"),
+		FallbackPublic: os.Getenv("ESSIE3_FALLBACK_PUBLIC") == "true",
+	}
+
 	fmt.Printf("essie3 starting on :%s\n", port)
 	fmt.Printf("  data:     %s\n", dataDir)
 	fmt.Printf("  fallback: %s (%d placeholders)\n", fallbackDataDir, fallback.Count())
 	fmt.Printf("  inline extensions: %s\n", strings.Join(inlineExts, ", "))
+	if auth.Enabled() {
+		fmt.Printf("  auth:     enabled (fallback_public=%v)\n", auth.FallbackPublic)
+	} else {
+		fmt.Printf("  auth:     disabled\n")
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           NewHandler(storage, fallback, AuthConfig{}),
+		Handler:           NewHandler(storage, fallback, auth),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,
