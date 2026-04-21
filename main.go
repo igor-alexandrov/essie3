@@ -35,7 +35,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           NewHandler(storage, fallback),
+		Handler:           NewHandler(storage, fallback, AuthConfig{}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,

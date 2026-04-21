@@ -12,10 +12,11 @@ import (
 type Handler struct {
 	storage  *Storage
 	fallback *Fallback
+	auth     AuthConfig
 }
 
-func NewHandler(storage *Storage, fallback *Fallback) http.Handler {
-	return &Handler{storage: storage, fallback: fallback}
+func NewHandler(storage *Storage, fallback *Fallback, auth AuthConfig) http.Handler {
+	return &Handler{storage: storage, fallback: fallback, auth: auth}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

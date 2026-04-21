@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -125,4 +126,12 @@ func (c AuthConfig) authorize(r *http.Request, o op, objectACL string) *authErro
 		code:    "InternalError",
 		message: "auth state error",
 	}
+}
+
+// writeAuthError logs and writes the S3 XML error response for a denied
+// request. The access key is never logged — the presented value could
+// be a real credential mistakenly pointed at essie3.
+func writeAuthError(w http.ResponseWriter, e *authError, bucket, key string) {
+	log.Printf("auth denied: %s", e.code)
+	writeXMLError(w, e.status, e.code, e.message, bucket, key)
 }

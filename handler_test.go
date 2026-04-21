@@ -12,10 +12,15 @@ import (
 
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return testServerWithAuth(t, AuthConfig{})
+}
+
+func testServerWithAuth(t *testing.T, auth AuthConfig) *httptest.Server {
+	t.Helper()
 	dataDir := t.TempDir()
 	s := NewStorage(dataDir)
 	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
-	h := NewHandler(s, fb)
+	h := NewHandler(s, fb, auth)
 	return httptest.NewServer(h)
 }
 
