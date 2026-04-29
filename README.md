@@ -20,6 +20,7 @@ yet, so your UI doesn't render broken images.
   (.jpg / .jpeg / .png / .gif / .webp / .pdf / .mp4 / .mov / .webm / .avi)
 - Atomic object writes (temp-file + rename)
 - Path-traversal protection on bucket and key names
+- Optional access-key auth with `x-amz-acl: public-read` escape hatch
 - Graceful shutdown on `SIGINT` / `SIGTERM`
 
 This is **not** a production S3 replacement — no SigV4 signature
@@ -134,7 +135,20 @@ AWS_ACCESS_KEY_ID=AKIATEST AWS_SECRET_ACCESS_KEY=anything \
 aws --endpoint-url http://localhost:9000 s3 ls s3://mybucket
 ```
 
-Objects stored with `x-amz-acl: public-read` are readable without credentials even when auth is enabled.
+Objects stored with `x-amz-acl: public-read` are readable without
+credentials even when auth is enabled. Set the ACL on upload:
+
+```sh
+# AWS CLI
+aws --endpoint-url http://localhost:9000 \
+    s3 cp photo.jpg s3://mybucket/photos/photo.jpg --acl public-read
+
+# curl
+curl -X PUT --data-binary @photo.jpg \
+  -H "Content-Type: image/jpeg" \
+  -H "x-amz-acl: public-read" \
+  http://localhost:9000/mybucket/photos/photo.jpg
+```
 
 ## Fallback placeholders
 
