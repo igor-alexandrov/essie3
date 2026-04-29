@@ -12,10 +12,11 @@ import (
 type Handler struct {
 	storage  *Storage
 	fallback *Fallback
+	auth     AuthConfig
 }
 
-func NewHandler(storage *Storage, fallback *Fallback) http.Handler {
-	return &Handler{storage: storage, fallback: fallback}
+func NewHandler(storage *Storage, fallback *Fallback, auth AuthConfig) http.Handler {
+	return &Handler{storage: storage, fallback: fallback, auth: auth}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +56,10 @@ func (h *Handler) setCORS(w http.ResponseWriter) {
 func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket string) {
 	switch r.Method {
 	case http.MethodPut:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if err := h.storage.CreateBucket(bucket); err != nil {
 			writeXMLError(w, http.StatusBadRequest, "InvalidBucketName", err.Error(), bucket, "")
 			return
@@ -63,17 +68,24 @@ func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket st
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><CreateBucketConfiguration/>`)
 	case http.MethodHead:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if h.storage.BucketExists(bucket) {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	case http.MethodGet:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, "")
+			return
+		}
 		if !h.storage.BucketExists(bucket) {
 			writeNoSuchBucket(w, bucket)
 			return
 		}
-		// ListObjects stub — return empty list.
 		w.Header().Set("Content-Type", "application/xml")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>%s</Name></ListBucketResult>`, bucket)
@@ -87,16 +99,24 @@ func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket st
 func (h *Handler) handleObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	switch r.Method {
 	case http.MethodPut:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, key)
+			return
+		}
 		if copySource := r.Header.Get("x-amz-copy-source"); copySource != "" {
 			h.handleCopyObject(w, bucket, key, copySource)
 		} else {
 			h.handlePutObject(w, r, bucket, key)
 		}
 	case http.MethodGet:
-		h.handleGetObject(w, bucket, key)
+		h.handleGetObject(w, r, bucket, key)
 	case http.MethodHead:
-		h.handleHeadObject(w, bucket, key)
+		h.handleHeadObject(w, r, bucket, key)
 	case http.MethodDelete:
+		if e := h.auth.authorize(r, opWrite, ""); e != nil {
+			writeAuthError(w, e, bucket, key)
+			return
+		}
 		h.storage.DeleteObject(bucket, key)
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -136,10 +156,22 @@ func (h *Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
-	obj, err := h.storage.GetObject(bucket, key)
-	if err != nil {
+func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	obj, objErr := h.storage.GetObject(bucket, key)
+
+	var acl string
+	if objErr == nil {
+		acl = obj.Meta.ACL
+	}
+
+	authErr := h.auth.authorize(r, opRead, acl)
+
+	if objErr != nil {
 		if p := h.fallback.Select(key); p != nil {
+			if authErr != nil && !h.auth.FallbackPublic {
+				writeAuthError(w, authErr, bucket, key)
+				return
+			}
 			w.Header().Set("Content-Type", p.ContentType)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
@@ -147,7 +179,16 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
 			w.Write(p.Body)
 			return
 		}
+		if authErr != nil {
+			writeAuthError(w, authErr, bucket, key)
+			return
+		}
 		writeNoSuchKey(w, bucket, key)
+		return
+	}
+
+	if authErr != nil {
+		writeAuthError(w, authErr, bucket, key)
 		return
 	}
 
@@ -162,17 +203,38 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, bucket, key string) {
 	w.Write(obj.Body)
 }
 
-func (h *Handler) handleHeadObject(w http.ResponseWriter, bucket, key string) {
-	meta, err := h.storage.HeadObject(bucket, key)
-	if err != nil {
+func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
+	meta, metaErr := h.storage.HeadObject(bucket, key)
+
+	var acl string
+	if metaErr == nil {
+		acl = meta.ACL
+	}
+
+	authErr := h.auth.authorize(r, opRead, acl)
+
+	if metaErr != nil {
 		if p := h.fallback.Select(key); p != nil {
+			if authErr != nil && !h.auth.FallbackPublic {
+				writeAuthError(w, authErr, bucket, key)
+				return
+			}
 			w.Header().Set("Content-Type", p.ContentType)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		if authErr != nil {
+			writeAuthError(w, authErr, bucket, key)
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if authErr != nil {
+		writeAuthError(w, authErr, bucket, key)
 		return
 	}
 
@@ -203,6 +265,10 @@ func (h *Handler) handleCopyObject(w http.ResponseWriter, dstBucket, dstKey, cop
 }
 
 func (h *Handler) handlePostObject(w http.ResponseWriter, r *http.Request, bucket string) {
+	if e := h.auth.authorize(r, opWrite, ""); e != nil {
+		writeAuthError(w, e, bucket, "")
+		return
+	}
 	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
 		writeXMLError(w, http.StatusBadRequest, "MalformedPOSTRequest", err.Error(), bucket, "")
 		return

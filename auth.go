@@ -1,0 +1,137 @@
+package main
+
+import (
+	"crypto/subtle"
+	"log"
+	"net/http"
+	"strings"
+)
+
+// AuthConfig controls optional request authentication for essie3. When
+// AccessKey is empty, auth is disabled and every request is served as-is
+// (the default, matching the pre-auth behavior). When AccessKey is set,
+// incoming requests must present that key in their SigV4 Authorization
+// header. The server does NOT validate SigV4 signatures — only the
+// Credential access-key portion is compared.
+type AuthConfig struct {
+	AccessKey      string
+	FallbackPublic bool
+}
+
+// Enabled reports whether auth is active.
+func (c AuthConfig) Enabled() bool {
+	return c.AccessKey != ""
+}
+
+type authResult int
+
+const (
+	authNotRequired authResult = iota // auth is disabled; don't look at the request
+	authOK                            // auth enabled and the presented key matches
+	authMissing                       // auth enabled but no Authorization header
+	authMalformed                     // auth enabled, header present but not parseable SigV4
+	authWrongKey                      // auth enabled, SigV4 parseable but key doesn't match
+)
+
+const sigV4Prefix = "AWS4-HMAC-SHA256 "
+
+// checkIdentity examines the Authorization header and returns an
+// authResult describing whether the request is authenticated. It never
+// validates the signature — only the Credential access-key portion.
+func (c AuthConfig) checkIdentity(r *http.Request) authResult {
+	if !c.Enabled() {
+		return authNotRequired
+	}
+
+	header := r.Header.Get("Authorization")
+	if header == "" {
+		return authMissing
+	}
+	if !strings.HasPrefix(header, sigV4Prefix) {
+		return authMalformed
+	}
+
+	// Parameters are comma-separated after the scheme prefix:
+	//   Credential=<key>/<date>/<region>/s3/aws4_request, SignedHeaders=..., Signature=...
+	params := strings.TrimPrefix(header, sigV4Prefix)
+	for _, p := range strings.Split(params, ",") {
+		p = strings.TrimSpace(p)
+		if !strings.HasPrefix(p, "Credential=") {
+			continue
+		}
+		cred := strings.TrimPrefix(p, "Credential=")
+		slash := strings.IndexByte(cred, '/')
+		if slash <= 0 {
+			return authMalformed
+		}
+		presented := cred[:slash]
+		if subtle.ConstantTimeCompare([]byte(presented), []byte(c.AccessKey)) == 1 {
+			return authOK
+		}
+		return authWrongKey
+	}
+	return authMalformed
+}
+
+type op int
+
+const (
+	opRead op = iota
+	opWrite
+)
+
+// authError carries the HTTP status and S3 error code so the caller can
+// translate a denial into a proper S3-shaped XML error response.
+type authError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *authError) Error() string {
+	return e.code + ": " + e.message
+}
+
+// authorize runs the full auth decision: identity check, then op + ACL
+// rules. Returns nil on allow; *authError on deny.
+func (c AuthConfig) authorize(r *http.Request, o op, objectACL string) *authError {
+	switch c.checkIdentity(r) {
+	case authNotRequired, authOK:
+		return nil
+	case authMalformed:
+		return &authError{
+			status:  http.StatusBadRequest,
+			code:    "InvalidArgument",
+			message: "Malformed Authorization header",
+		}
+	case authWrongKey:
+		return &authError{
+			status:  http.StatusForbidden,
+			code:    "InvalidAccessKeyId",
+			message: "The access key ID you provided does not exist.",
+		}
+	case authMissing:
+		if o == opRead && objectACL == "public-read" {
+			return nil
+		}
+		return &authError{
+			status:  http.StatusForbidden,
+			code:    "AccessDenied",
+			message: "Access Denied",
+		}
+	}
+	// Unreachable: every authResult value handled above.
+	return &authError{
+		status:  http.StatusInternalServerError,
+		code:    "InternalError",
+		message: "auth state error",
+	}
+}
+
+// writeAuthError logs and writes the S3 XML error response for a denied
+// request. The access key is never logged — the presented value could
+// be a real credential mistakenly pointed at essie3.
+func writeAuthError(w http.ResponseWriter, e *authError, bucket, key string) {
+	log.Printf("auth denied: %s", e.code)
+	writeXMLError(w, e.status, e.code, e.message, bucket, key)
+}
