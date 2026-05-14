@@ -41,6 +41,17 @@ func writeNoSuchBucket(w http.ResponseWriter, bucket string) {
 	writeXMLError(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist.", bucket, "")
 }
 
+// writeInvalidRange writes the S3-shaped 416 response for an
+// unsatisfiable Range request. Content-Range must be set before
+// writeXMLError calls WriteHeader.
+func writeInvalidRange(w http.ResponseWriter, bucket, key string, totalLen int64) {
+	w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", totalLen))
+	writeXMLError(w, http.StatusRequestedRangeNotSatisfiable,
+		"InvalidRange",
+		"The requested range is not satisfiable",
+		bucket, key)
+}
+
 func writeCopyObjectResult(w http.ResponseWriter, etag string) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
