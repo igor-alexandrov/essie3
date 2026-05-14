@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +54,61 @@ func TestDebugResponseWriter_HeaderDelegates(t *testing.T) {
 	drw.Header().Set("X-Foo", "bar")
 	if got := rec.Header().Get("X-Foo"); got != "bar" {
 		t.Errorf("underlying X-Foo = %q, want %q", got, "bar")
+	}
+}
+
+func TestFormatRequest_BasicGET(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/bucket/key", nil)
+	req.Header.Set("Host", "localhost:9000")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=AKIATEST/x/y/s3/aws4_request, Signature=abc")
+
+	got := formatRequest(req)
+
+	want := "--> GET /bucket/key\n" +
+		"    Authorization: AWS4-HMAC-SHA256 Credential=AKIATEST/x/y/s3/aws4_request, Signature=abc\n" +
+		"    Host: localhost:9000\n"
+	if got != want {
+		t.Errorf("formatRequest mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestFormatRequest_PreservesQueryString(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/bucket?list-type=2&prefix=foo", nil)
+
+	got := formatRequest(req)
+
+	if !strings.HasPrefix(got, "--> GET /bucket?list-type=2&prefix=foo\n") {
+		t.Errorf("expected request line to include query string, got:\n%s", got)
+	}
+}
+
+func TestFormatRequest_MultiValueHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPut, "/bucket/key", nil)
+	req.Header.Add("X-Amz-Meta-Tag", "first")
+	req.Header.Add("X-Amz-Meta-Tag", "second")
+
+	got := formatRequest(req)
+
+	if !strings.Contains(got, "    X-Amz-Meta-Tag: first\n") {
+		t.Errorf("expected first value line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "    X-Amz-Meta-Tag: second\n") {
+		t.Errorf("expected second value line, got:\n%s", got)
+	}
+}
+
+func TestFormatRequest_HeadersAreSorted(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/bucket/key", nil)
+	req.Header.Set("Zebra", "z")
+	req.Header.Set("Apple", "a")
+	req.Header.Set("Mango", "m")
+
+	got := formatRequest(req)
+
+	appleIdx := strings.Index(got, "Apple:")
+	mangoIdx := strings.Index(got, "Mango:")
+	zebraIdx := strings.Index(got, "Zebra:")
+	if !(appleIdx < mangoIdx && mangoIdx < zebraIdx) {
+		t.Errorf("headers not sorted alphabetically:\n%s", got)
 	}
 }
