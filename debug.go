@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -83,4 +85,20 @@ func formatResponse(d *debugResponseWriter, elapsed time.Duration) string {
 		d.status, http.StatusText(d.status), elapsed, d.bytes)
 	writeHeaders(&b, d.Header())
 	return b.String()
+}
+
+// WithDebugLogging returns an http.Handler that prints a multi-line
+// request block before delegating to next, then a response block with
+// the captured status, byte count, and elapsed time. Output is written
+// to out (typically os.Stderr). A per-middleware *log.Logger serializes
+// writes so concurrent requests do not interleave their blocks.
+func WithDebugLogging(next http.Handler, out io.Writer) http.Handler {
+	logger := log.New(out, "", 0)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		logger.Print(formatRequest(r))
+		drw := newDebugResponseWriter(w)
+		next.ServeHTTP(drw, r)
+		logger.Print(formatResponse(drw, time.Since(start)))
+	})
 }

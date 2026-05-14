@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,5 +146,66 @@ func TestFormatResponse_ForbiddenWithSortedHeaders(t *testing.T) {
 		"    X-Amz-Request-Id: req-1\n"
 	if got != want {
 		t.Errorf("formatResponse mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestWithDebugLogging_PrintsRequestAndResponse(t *testing.T) {
+	var buf bytes.Buffer
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Etag", `"xyz"`)
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("ok"))
+	})
+	mw := WithDebugLogging(inner, &buf)
+
+	req := httptest.NewRequest(http.MethodPut, "/bucket/key", strings.NewReader("body"))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	// Inner handler's response must reach the client unchanged.
+	if rec.Code != http.StatusCreated {
+		t.Errorf("client-visible status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+	if got := rec.Body.String(); got != "ok" {
+		t.Errorf("client-visible body = %q, want %q", got, "ok")
+	}
+	if got := rec.Header().Get("Etag"); got != `"xyz"` {
+		t.Errorf("client-visible Etag = %q, want %q", got, `"xyz"`)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "--> PUT /bucket/key\n") {
+		t.Errorf("missing request line in debug output:\n%s", out)
+	}
+	if !strings.Contains(out, "    Content-Type: text/plain\n") {
+		t.Errorf("missing request header in debug output:\n%s", out)
+	}
+	if !strings.Contains(out, "<-- 201 Created (") {
+		t.Errorf("missing response line in debug output:\n%s", out)
+	}
+	if !strings.Contains(out, "    Etag: \"xyz\"\n") {
+		t.Errorf("missing response header in debug output:\n%s", out)
+	}
+
+	// Request block must come before response block.
+	if strings.Index(out, "--> PUT") > strings.Index(out, "<-- 201") {
+		t.Errorf("request block printed after response block:\n%s", out)
+	}
+}
+
+func TestWithDebugLogging_ImplicitStatusIs200(t *testing.T) {
+	var buf bytes.Buffer
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hi")) // no WriteHeader — implicit 200
+	})
+	mw := WithDebugLogging(inner, &buf)
+
+	req := httptest.NewRequest(http.MethodGet, "/bucket/key", nil)
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	if !strings.Contains(buf.String(), "<-- 200 OK (") {
+		t.Errorf("expected implicit-200 status in output:\n%s", buf.String())
 	}
 }
