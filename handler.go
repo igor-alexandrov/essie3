@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -172,11 +173,25 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 				writeAuthError(w, authErr, bucket, key)
 				return
 			}
+			totalLen := int64(len(p.Body))
+			out := evaluateRange(r, totalLen, "")
+			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
-			w.WriteHeader(http.StatusOK)
-			w.Write(p.Body)
+			switch {
+			case out.serveFull:
+				w.Header().Set("Content-Length", strconv.FormatInt(totalLen, 10))
+				w.WriteHeader(http.StatusOK)
+				w.Write(p.Body)
+			case out.bounds != nil:
+				s, e := out.bounds.start, out.bounds.end
+				w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", s, e, totalLen))
+				w.Header().Set("Content-Length", strconv.FormatInt(e-s+1, 10))
+				w.WriteHeader(http.StatusPartialContent)
+				w.Write(p.Body[s : e+1])
+			default:
+				writeInvalidRange(w, bucket, key, totalLen)
+			}
 			return
 		}
 		if authErr != nil {
@@ -192,15 +207,29 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 		return
 	}
 
+	totalLen := int64(len(obj.Body))
+	out := evaluateRange(r, totalLen, obj.Meta.ETag)
+	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Type", obj.Meta.ContentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Meta.ContentLength))
 	w.Header().Set("ETag", obj.Meta.ETag)
 	w.Header().Set("Last-Modified", obj.Meta.CreatedAt.UTC().Format(http.TimeFormat))
 	if obj.Meta.ContentDisposition != "" {
 		w.Header().Set("Content-Disposition", obj.Meta.ContentDisposition)
 	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(obj.Body)
+	switch {
+	case out.serveFull:
+		w.Header().Set("Content-Length", strconv.FormatInt(totalLen, 10))
+		w.WriteHeader(http.StatusOK)
+		w.Write(obj.Body)
+	case out.bounds != nil:
+		s, e := out.bounds.start, out.bounds.end
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", s, e, totalLen))
+		w.Header().Set("Content-Length", strconv.FormatInt(e-s+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(obj.Body[s : e+1])
+	default:
+		writeInvalidRange(w, bucket, key, totalLen)
+	}
 }
 
 func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
@@ -219,10 +248,23 @@ func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucke
 				writeAuthError(w, authErr, bucket, key)
 				return
 			}
+			totalLen := int64(len(p.Body))
+			out := evaluateRange(r, totalLen, "")
+			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(p.Body)))
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
-			w.WriteHeader(http.StatusOK)
+			switch {
+			case out.serveFull:
+				w.Header().Set("Content-Length", strconv.FormatInt(totalLen, 10))
+				w.WriteHeader(http.StatusOK)
+			case out.bounds != nil:
+				s, e := out.bounds.start, out.bounds.end
+				w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", s, e, totalLen))
+				w.Header().Set("Content-Length", strconv.FormatInt(e-s+1, 10))
+				w.WriteHeader(http.StatusPartialContent)
+			default:
+				writeInvalidRange(w, bucket, key, totalLen)
+			}
 			return
 		}
 		if authErr != nil {
@@ -238,11 +280,24 @@ func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucke
 		return
 	}
 
+	totalLen := meta.ContentLength
+	out := evaluateRange(r, totalLen, meta.ETag)
+	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Type", meta.ContentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", meta.ContentLength))
 	w.Header().Set("ETag", meta.ETag)
 	w.Header().Set("Last-Modified", meta.CreatedAt.UTC().Format(http.TimeFormat))
-	w.WriteHeader(http.StatusOK)
+	switch {
+	case out.serveFull:
+		w.Header().Set("Content-Length", strconv.FormatInt(totalLen, 10))
+		w.WriteHeader(http.StatusOK)
+	case out.bounds != nil:
+		s, e := out.bounds.start, out.bounds.end
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", s, e, totalLen))
+		w.Header().Set("Content-Length", strconv.FormatInt(e-s+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+	default:
+		writeInvalidRange(w, bucket, key, totalLen)
+	}
 }
 
 func (h *Handler) handleCopyObject(w http.ResponseWriter, dstBucket, dstKey, copySource string) {
