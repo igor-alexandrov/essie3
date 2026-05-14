@@ -16,6 +16,8 @@ yet, so your UI doesn't render broken images.
 - Bucket create / head / list (stub)
 - CORS enabled for browser uploads
 - Per-object metadata persisted as JSON sidecar files
+- HTTP `Range` requests (single-range) with `If-Range` ETag matching
+  on objects and fallback placeholders
 - Deterministic fallback placeholders by file extension
   (.jpg / .jpeg / .png / .gif / .webp / .pdf / .mp4 / .mov / .webm / .avi)
 - Atomic object writes (temp-file + rename)
@@ -112,6 +114,33 @@ curl -X POST http://localhost:9000/mybucket \
   -F "key=uploads/photo.jpg" \
   -F "file=@photo.jpg"
 ```
+
+## Range requests
+
+GET and HEAD on objects and fallback placeholders honor the
+[HTTP `Range` header](https://datatracker.ietf.org/doc/html/rfc9110#section-14.2)
+in its three single-range forms:
+
+```sh
+curl -H "Range: bytes=0-4"   http://localhost:9000/mybucket/photos/photo.jpg
+curl -H "Range: bytes=1024-" http://localhost:9000/mybucket/photos/photo.jpg
+curl -H "Range: bytes=-256"  http://localhost:9000/mybucket/photos/photo.jpg
+```
+
+Responses include `Accept-Ranges: bytes`. A satisfiable Range returns
+`206 Partial Content` with `Content-Range: bytes <start>-<end>/<total>`
+and the sliced body. An unsatisfiable Range returns
+`416 Requested Range Not Satisfiable` with an S3-shaped XML body
+(`<Code>InvalidRange</Code>`) and `Content-Range: bytes */<total>`.
+
+`If-Range: "<etag>"` is honored against the object's ETag — if the
+header matches, the Range is served; if it doesn't, the full body is
+served as a 200 instead (so a client resuming an interrupted download
+never merges bytes from a changed object). `If-Range` with a date
+value is treated as a mismatch.
+
+Multi-range requests (`Range: bytes=0-100, 200-300`) are not
+supported; essie3 ignores them and serves the full body.
 
 ## Auth (optional)
 
