@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 // debugResponseWriter wraps an http.ResponseWriter so the debug
@@ -71,4 +73,14 @@ func writeHeaders(b *strings.Builder, h http.Header) {
 			b.WriteByte('\n')
 		}
 	}
+}
+
+// formatResponse renders the multi-line response block: the `<-- CODE
+// STATUS (elapsed, N bytes)` line followed by sorted response headers.
+func formatResponse(d *debugResponseWriter, elapsed time.Duration) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "<-- %d %s (%s, %d bytes)\n",
+		d.status, http.StatusText(d.status), elapsed, d.bytes)
+	writeHeaders(&b, d.Header())
+	return b.String()
 }

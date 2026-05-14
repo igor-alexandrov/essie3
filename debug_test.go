@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDebugResponseWriter_DefaultStatusIs200(t *testing.T) {
@@ -110,5 +111,39 @@ func TestFormatRequest_HeadersAreSorted(t *testing.T) {
 	zebraIdx := strings.Index(got, "Zebra:")
 	if !(appleIdx < mangoIdx && mangoIdx < zebraIdx) {
 		t.Errorf("headers not sorted alphabetically:\n%s", got)
+	}
+}
+
+func TestFormatResponse_BasicOK(t *testing.T) {
+	rec := httptest.NewRecorder()
+	drw := newDebugResponseWriter(rec)
+	drw.Header().Set("Etag", `"abc"`)
+	drw.WriteHeader(http.StatusOK)
+	drw.Write([]byte("hello"))
+
+	got := formatResponse(drw, 12300*time.Microsecond) // 12.3ms
+
+	want := "<-- 200 OK (12.3ms, 5 bytes)\n" +
+		"    Etag: \"abc\"\n"
+	if got != want {
+		t.Errorf("formatResponse mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestFormatResponse_ForbiddenWithSortedHeaders(t *testing.T) {
+	rec := httptest.NewRecorder()
+	drw := newDebugResponseWriter(rec)
+	drw.Header().Set("X-Amz-Request-Id", "req-1")
+	drw.Header().Set("Content-Type", "application/xml")
+	drw.WriteHeader(http.StatusForbidden)
+	drw.Write([]byte("<Error/>"))
+
+	got := formatResponse(drw, 2*time.Millisecond)
+
+	want := "<-- 403 Forbidden (2ms, 8 bytes)\n" +
+		"    Content-Type: application/xml\n" +
+		"    X-Amz-Request-Id: req-1\n"
+	if got != want {
+		t.Errorf("formatResponse mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }
