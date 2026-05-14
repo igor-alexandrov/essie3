@@ -37,6 +37,9 @@ func evaluateRange(r *http.Request, totalLen int64, etag string) rangeOutcome {
 	if strings.Contains(spec, ",") {
 		return rangeOutcome{serveFull: true}
 	}
+	if ir := r.Header.Get("If-Range"); ir != "" && ir != etag {
+		return rangeOutcome{serveFull: true}
+	}
 	return parseByteRange(spec, totalLen)
 }
 

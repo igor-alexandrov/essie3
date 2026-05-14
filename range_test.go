@@ -94,3 +94,42 @@ func TestEvaluateRange_FullSpec(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluateRange_IfRangeMatchesETag(t *testing.T) {
+	req := httptest.NewRequest("GET", "/bucket/key", nil)
+	req.Header.Set("Range", "bytes=10-19")
+	req.Header.Set("If-Range", `"abc"`)
+
+	out := evaluateRange(req, 100, `"abc"`)
+
+	if out.serveFull {
+		t.Fatalf("serveFull = true, want false (If-Range matched)")
+	}
+	if out.bounds == nil || out.bounds.start != 10 || out.bounds.end != 19 {
+		t.Fatalf("bounds = %+v, want {10, 19}", out.bounds)
+	}
+}
+
+func TestEvaluateRange_IfRangeMismatchETag(t *testing.T) {
+	req := httptest.NewRequest("GET", "/bucket/key", nil)
+	req.Header.Set("Range", "bytes=10-19")
+	req.Header.Set("If-Range", `"wrong"`)
+
+	out := evaluateRange(req, 100, `"abc"`)
+
+	if !out.serveFull {
+		t.Errorf("serveFull = false, want true (If-Range mismatched)")
+	}
+}
+
+func TestEvaluateRange_IfRangeDateTreatedAsMismatch(t *testing.T) {
+	req := httptest.NewRequest("GET", "/bucket/key", nil)
+	req.Header.Set("Range", "bytes=10-19")
+	req.Header.Set("If-Range", "Wed, 21 Oct 2015 07:28:00 GMT")
+
+	out := evaluateRange(req, 100, `"abc"`)
+
+	if !out.serveFull {
+		t.Errorf("serveFull = false, want true (date-shaped If-Range is mismatch)")
+	}
+}
