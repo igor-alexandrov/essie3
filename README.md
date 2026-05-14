@@ -151,6 +151,9 @@ curl -X PUT --data-binary @photo.jpg \
   http://localhost:9000/mybucket/photos/photo.jpg
 ```
 
+When debugging an auth failure, set `ESSIE3_DEBUG=true` to print the
+full `Authorization` header and the chosen response status to stderr.
+
 ## Fallback placeholders
 
 Put any number of images, PDFs, or videos in the fallback directory. On
