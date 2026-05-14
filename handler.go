@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 )
@@ -21,8 +20,6 @@ func NewHandler(storage *Storage, fallback *Fallback, auth AuthConfig) http.Hand
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.setCORS(w)
-
-	log.Printf("%s %s", r.Method, r.URL.Path)
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)

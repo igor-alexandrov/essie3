@@ -33,6 +33,8 @@ func main() {
 		FallbackPublic: os.Getenv("ESSIE3_FALLBACK_PUBLIC") == "true",
 	}
 
+	debug := os.Getenv("ESSIE3_DEBUG") == "true"
+
 	fmt.Printf("essie3 starting on :%s\n", port)
 	fmt.Printf("  data:     %s\n", dataDir)
 	fmt.Printf("  fallback: %s (%d placeholders)\n", fallbackDataDir, fallback.Count())
@@ -42,10 +44,17 @@ func main() {
 	} else {
 		fmt.Printf("  auth:     disabled\n")
 	}
+	if debug {
+		fmt.Printf("  debug:    enabled\n")
+	}
 
+	var handler http.Handler = NewHandler(storage, fallback, auth)
+	if debug {
+		handler = WithDebugLogging(handler, os.Stderr)
+	}
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           NewHandler(storage, fallback, auth),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,
