@@ -50,8 +50,8 @@ services:
       - ./data:/data
       - ./fallback-data:/fallback-data
     environment:
-      DATA_DIR: /data
-      FALLBACK_DATA_DIR: /fallback-data
+      ESSIE3_DATA_DIR: /data
+      ESSIE3_FALLBACK_DATA_DIR: /fallback-data
 ```
 
 Then run:
@@ -64,15 +64,15 @@ docker compose up
 
 All configuration via environment variables:
 
-| Variable                     | Default           | Description                       |
-| ---------------------------- | ----------------- | --------------------------------- |
-| `PORT`                       | `9000`            | HTTP port to listen on            |
-| `DATA_DIR`                   | `./data`          | Where uploaded objects are stored |
-| `FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of fallback placeholders|
-| `FALLBACK_INLINE_EXTENSIONS` | `.jpg`, `.jpeg`<br>`.png`, `.gif`, `.webp`<br>`.pdf`<br>`.mp4`, `.mov`, `.webm`, `.avi` | Comma-separated extensions served inline on fallback responses; everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. Example: `FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf` |
-| `ESSIE3_ACCESS_KEY`          | *(unset)*         | When set, essie3 requires requests to present this key in the `Authorization` header's SigV4 `Credential=` portion. Signatures are not verified — only the access-key string is compared. When unset, all requests are served anonymously (default behavior). |
-| `ESSIE3_FALLBACK_PUBLIC`     | `false`           | Only relevant when `ESSIE3_ACCESS_KEY` is set. `true` → fallback placeholders are served anonymously even without credentials. `false` → fallbacks follow the same auth check as real objects. |
-| `ESSIE3_DEBUG`               | *(unset)*         | When set to `true`, log full request and response details (method, path, headers, status, timing) to stderr. Useful when debugging integration tests, especially auth-failure paths. Off by default. |
+| Variable                            | Default           | Description                       |
+| ----------------------------------- | ----------------- | --------------------------------- |
+| `ESSIE3_PORT`                       | `9000`            | HTTP port to listen on            |
+| `ESSIE3_DATA_DIR`                   | `./data`          | Where uploaded objects are stored |
+| `ESSIE3_FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of fallback placeholders|
+| `ESSIE3_FALLBACK_INLINE_EXTENSIONS` | `.jpg`, `.jpeg`<br>`.png`, `.gif`, `.webp`<br>`.pdf`<br>`.mp4`, `.mov`, `.webm`, `.avi` | Comma-separated extensions served inline on fallback responses; everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. Example: `ESSIE3_FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf` |
+| `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, essie3 requires requests to present this key in the `Authorization` header's SigV4 `Credential=` portion. Signatures are not verified — only the access-key string is compared. When unset, all requests are served anonymously (default behavior). |
+| `ESSIE3_FALLBACK_PUBLIC`            | `false`           | Only relevant when `ESSIE3_ACCESS_KEY` is set. `true` → fallback placeholders are served anonymously even without credentials. `false` → fallbacks follow the same auth check as real objects. |
+| `ESSIE3_DEBUG`                      | *(unset)*         | When set to `true`, log full request and response details (method, path, headers, status, timing) to stderr. Useful when debugging integration tests, especially auth-failure paths. Off by default. |
 
 ## Usage
 
