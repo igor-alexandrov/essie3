@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type StoredObject struct {
 
 type Storage struct {
 	dataDir string
+	keyMu   sync.Map // map[string]*sync.RWMutex (key = bucket+"/"+key)
 }
 
 func NewStorage(dataDir string) *Storage {
@@ -57,6 +59,20 @@ func (s *Storage) objectPath(bucket, key string) string {
 
 func (s *Storage) metaPath(bucket, key string) string {
 	return s.objectPath(bucket, key) + ".meta.json"
+}
+
+// keyMutex returns the per-key RWMutex, lazily creating it on first
+// use. Used by PutObject/DeleteObject (write lock) and GetObject/
+// HeadObject (read lock) to serialize writers vs writers and readers
+// vs writers, so a reader cannot observe the brief window between a
+// writer's body rename and its meta rename.
+func (s *Storage) keyMutex(bucket, key string) *sync.RWMutex {
+	k := bucket + "/" + key
+	if mu, ok := s.keyMu.Load(k); ok {
+		return mu.(*sync.RWMutex)
+	}
+	mu, _ := s.keyMu.LoadOrStore(k, &sync.RWMutex{})
+	return mu.(*sync.RWMutex)
 }
 
 func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (string, error) {
