@@ -575,3 +575,45 @@ func TestHandler_HeadFallbackHasAcceptRanges(t *testing.T) {
 		t.Errorf("Accept-Ranges = %q, want %q", got, "bytes")
 	}
 }
+
+func TestHandler_DeleteObject_InvalidNameReturns400(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/b/../escape", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (must not silently 204)", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/xml" {
+		t.Errorf("Content-Type = %q, want application/xml", got)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<Code>InvalidArgument</Code>") {
+		t.Errorf("body missing <Code>InvalidArgument</Code>:\n%s", body)
+	}
+}
+
+func TestHandler_DeleteObject_MissingKeyReturns204(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	put, _ := http.NewRequest("PUT", srv.URL+"/b", nil)
+	http.DefaultClient.Do(put)
+
+	req, _ := http.NewRequest("DELETE", srv.URL+"/b/never-existed.txt", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 (idempotent DELETE)", resp.StatusCode)
+	}
+}

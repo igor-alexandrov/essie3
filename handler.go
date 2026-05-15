@@ -115,7 +115,14 @@ func (h *Handler) handleObject(w http.ResponseWriter, r *http.Request, bucket, k
 			writeAuthError(w, e, bucket, key)
 			return
 		}
-		h.storage.DeleteObject(bucket, key)
+		if err := h.storage.DeleteObject(bucket, key); err != nil {
+			if errors.Is(err, errInvalidName) {
+				writeXMLError(w, http.StatusBadRequest, "InvalidArgument", err.Error(), bucket, key)
+				return
+			}
+			writeXMLError(w, http.StatusInternalServerError, "InternalError", err.Error(), bucket, key)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
