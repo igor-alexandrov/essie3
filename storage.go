@@ -191,6 +191,21 @@ func (s *Storage) readMeta(bucket, key string) (*ObjectMeta, error) {
 	return &meta, nil
 }
 
+// rollbackBody restores objPath to its prior state after a meta-write
+// failure. If hadPrev=true, prevBody is rewritten atomically; if
+// hadPrev=false (the body was newly created by this PUT), objPath is
+// removed. A non-existent file with hadPrev=false is treated as
+// already-rolled-back (returns nil).
+func rollbackBody(objPath string, prevBody []byte, hadPrev bool) error {
+	if hadPrev {
+		return writeFileAtomic(objPath, prevBody, 0o644)
+	}
+	if err := os.Remove(objPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // writeFileAtomic writes data to a sibling temp file and renames it into
 // place so a crashed or concurrent writer can never leave a torn file.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
