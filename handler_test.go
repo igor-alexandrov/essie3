@@ -575,3 +575,41 @@ func TestHandler_HeadFallbackHasAcceptRanges(t *testing.T) {
 		t.Errorf("Accept-Ranges = %q, want %q", got, "bytes")
 	}
 }
+
+func TestHandler_GetObject_InvalidNameReturns400(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/../escape/photo.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/xml" {
+		t.Errorf("Content-Type = %q, want application/xml (must not serve fallback bytes)", got)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<Code>InvalidArgument</Code>") {
+		t.Errorf("body missing <Code>InvalidArgument</Code>:\n%s", body)
+	}
+}
+
+func TestHandler_HeadObject_InvalidNameReturns400(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("HEAD", srv.URL+"/../escape/photo.jpg", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
