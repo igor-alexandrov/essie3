@@ -14,13 +14,13 @@ import (
 )
 
 func main() {
-	port := getenv("PORT", "9000")
-	dataDir := getenv("DATA_DIR", "./data")
-	fallbackDataDir := getenv("FALLBACK_DATA_DIR", "./fallback-data")
+	port := getenv("ESSIE3_PORT", "9000")
+	dataDir := getenv("ESSIE3_DATA_DIR", "./data")
+	fallbackDataDir := getenv("ESSIE3_FALLBACK_DATA_DIR", "./fallback-data")
 
 	storage := NewStorage(dataDir)
 	inlineExts := DefaultInlineExtensions
-	if v, ok := os.LookupEnv("FALLBACK_INLINE_EXTENSIONS"); ok {
+	if v, ok := os.LookupEnv("ESSIE3_FALLBACK_INLINE_EXTENSIONS"); ok {
 		inlineExts = ParseExtList(v)
 	}
 	fallback, err := NewFallback(fallbackDataDir, inlineExts)

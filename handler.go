@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -163,6 +164,10 @@ func (h *Handler) handlePutObject(w http.ResponseWriter, r *http.Request, bucket
 
 func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	obj, objErr := h.storage.GetObject(bucket, key)
+	if errors.Is(objErr, errInvalidName) {
+		writeXMLError(w, http.StatusBadRequest, "InvalidArgument", objErr.Error(), bucket, key)
+		return
+	}
 
 	var acl string
 	if objErr == nil {
@@ -238,6 +243,10 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 
 func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	meta, metaErr := h.storage.HeadObject(bucket, key)
+	if errors.Is(metaErr, errInvalidName) {
+		writeXMLError(w, http.StatusBadRequest, "InvalidArgument", metaErr.Error(), bucket, key)
+		return
+	}
 
 	var acl string
 	if metaErr == nil {
@@ -316,7 +325,14 @@ func (h *Handler) handleCopyObject(w http.ResponseWriter, dstBucket, dstKey, cop
 
 	etag, err := h.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
-		writeNoSuchKey(w, srcBucket, srcKey)
+		switch {
+		case errors.Is(err, errInvalidName):
+			writeXMLError(w, http.StatusBadRequest, "InvalidArgument", err.Error(), dstBucket, dstKey)
+		case errors.Is(err, os.ErrNotExist):
+			writeNoSuchKey(w, srcBucket, srcKey)
+		default:
+			writeXMLError(w, http.StatusInternalServerError, "InternalError", err.Error(), dstBucket, dstKey)
+		}
 		return
 	}
 
