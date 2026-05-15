@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -317,7 +318,14 @@ func (h *Handler) handleCopyObject(w http.ResponseWriter, dstBucket, dstKey, cop
 
 	etag, err := h.storage.CopyObject(srcBucket, srcKey, dstBucket, dstKey)
 	if err != nil {
-		writeNoSuchKey(w, srcBucket, srcKey)
+		switch {
+		case errors.Is(err, errInvalidName):
+			writeXMLError(w, http.StatusBadRequest, "InvalidArgument", err.Error(), dstBucket, dstKey)
+		case errors.Is(err, os.ErrNotExist):
+			writeNoSuchKey(w, srcBucket, srcKey)
+		default:
+			writeXMLError(w, http.StatusInternalServerError, "InternalError", err.Error(), dstBucket, dstKey)
+		}
 		return
 	}
 

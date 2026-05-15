@@ -613,3 +613,51 @@ func TestHandler_HeadObject_InvalidNameReturns400(t *testing.T) {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestHandler_CopyObject_InvalidSourceReturns400(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	put, _ := http.NewRequest("PUT", srv.URL+"/b/src.txt", strings.NewReader("hello"))
+	http.DefaultClient.Do(put)
+
+	req, _ := http.NewRequest("PUT", srv.URL+"/b/dst.txt", nil)
+	req.Header.Set("x-amz-copy-source", "/b/../escape")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<Code>InvalidArgument</Code>") {
+		t.Errorf("body missing <Code>InvalidArgument</Code>:\n%s", body)
+	}
+}
+
+func TestHandler_CopyObject_MissingSourceReturns404(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("PUT", srv.URL+"/b/dst.txt", nil)
+	req.Header.Set("x-amz-copy-source", "/b/missing-key.txt")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<Code>NoSuchKey</Code>") {
+		t.Errorf("body missing <Code>NoSuchKey</Code>:\n%s", body)
+	}
+	if !strings.Contains(string(body), "<Key>missing-key.txt</Key>") {
+		t.Errorf("body missing <Key>missing-key.txt</Key>:\n%s", body)
+	}
+}
