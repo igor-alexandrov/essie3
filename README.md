@@ -210,7 +210,10 @@ data/
     └── <key>.meta.json    # content-type, etag, created-at, acl, ...
 ```
 
-Metadata is written atomically alongside the body.
+Metadata is written atomically alongside the body. PUT and DELETE on
+the same key are serialized via an in-process per-key lock so
+concurrent writers cannot leave a body/meta mismatch. essie3 does not
+coordinate across multiple processes sharing the same `DATA_DIR`.
 
 ## Development
 
