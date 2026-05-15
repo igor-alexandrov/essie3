@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type StoredObject struct {
 
 type Storage struct {
 	dataDir string
+	keyMu   sync.Map // map[string]*sync.RWMutex (key = bucket+"/"+key)
 }
 
 func NewStorage(dataDir string) *Storage {
@@ -59,6 +61,20 @@ func (s *Storage) metaPath(bucket, key string) string {
 	return s.objectPath(bucket, key) + ".meta.json"
 }
 
+// keyMutex returns the per-key RWMutex, lazily creating it on first
+// use. Used by PutObject/DeleteObject (write lock) and GetObject/
+// HeadObject (read lock) to serialize writers vs writers and readers
+// vs writers, so a reader cannot observe the brief window between a
+// writer's body rename and its meta rename.
+func (s *Storage) keyMutex(bucket, key string) *sync.RWMutex {
+	k := bucket + "/" + key
+	if mu, ok := s.keyMu.Load(k); ok {
+		return mu.(*sync.RWMutex)
+	}
+	mu, _ := s.keyMu.LoadOrStore(k, &sync.RWMutex{})
+	return mu.(*sync.RWMutex)
+}
+
 func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (string, error) {
 	if err := validateName(bucket); err != nil {
 		return "", err
@@ -67,11 +83,21 @@ func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (
 		return "", err
 	}
 
+	mu := s.keyMutex(bucket, key)
+	mu.Lock()
+	defer mu.Unlock()
+
 	objPath := s.objectPath(bucket, key)
 
 	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
+
+	prevBody, prevErr := os.ReadFile(objPath)
+	if prevErr != nil && !os.IsNotExist(prevErr) {
+		return "", fmt.Errorf("read prev body: %w", prevErr)
+	}
+	hadPrev := prevErr == nil
 
 	etag := fmt.Sprintf("\"%x\"", md5.Sum(body))
 	meta.ETag = etag
@@ -87,6 +113,9 @@ func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (
 		return "", fmt.Errorf("write object: %w", err)
 	}
 	if err := writeFileAtomic(s.metaPath(bucket, key), metaBytes, 0o644); err != nil {
+		if rbErr := rollbackBody(objPath, prevBody, hadPrev); rbErr != nil {
+			log.Printf("rollback after meta-write failure for %s/%s: %v", bucket, key, rbErr)
+		}
 		return "", fmt.Errorf("write meta: %w", err)
 	}
 
@@ -100,6 +129,10 @@ func (s *Storage) GetObject(bucket, key string) (*StoredObject, error) {
 	if err := validateName(key); err != nil {
 		return nil, err
 	}
+
+	mu := s.keyMutex(bucket, key)
+	mu.RLock()
+	defer mu.RUnlock()
 
 	body, err := os.ReadFile(s.objectPath(bucket, key))
 	if err != nil {
@@ -121,6 +154,9 @@ func (s *Storage) HeadObject(bucket, key string) (*ObjectMeta, error) {
 	if err := validateName(key); err != nil {
 		return nil, err
 	}
+	mu := s.keyMutex(bucket, key)
+	mu.RLock()
+	defer mu.RUnlock()
 	return s.readMeta(bucket, key)
 }
 
@@ -131,6 +167,9 @@ func (s *Storage) DeleteObject(bucket, key string) {
 	if err := validateName(key); err != nil {
 		return
 	}
+	mu := s.keyMutex(bucket, key)
+	mu.Lock()
+	defer mu.Unlock()
 	if err := os.Remove(s.objectPath(bucket, key)); err != nil && !os.IsNotExist(err) {
 		log.Printf("delete object %s/%s: %v", bucket, key, err)
 	}
@@ -173,6 +212,21 @@ func (s *Storage) readMeta(bucket, key string) (*ObjectMeta, error) {
 		return nil, fmt.Errorf("parse meta: %w", err)
 	}
 	return &meta, nil
+}
+
+// rollbackBody restores objPath to its prior state after a meta-write
+// failure. If hadPrev=true, prevBody is rewritten atomically; if
+// hadPrev=false (the body was newly created by this PUT), objPath is
+// removed. A non-existent file with hadPrev=false is treated as
+// already-rolled-back (returns nil).
+func rollbackBody(objPath string, prevBody []byte, hadPrev bool) error {
+	if hadPrev {
+		return writeFileAtomic(objPath, prevBody, 0o644)
+	}
+	if err := os.Remove(objPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // writeFileAtomic writes data to a sibling temp file and renames it into
