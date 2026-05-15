@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"testing"
 )
@@ -149,5 +150,24 @@ func TestBucketCreateAndExists(t *testing.T) {
 
 	if !s.BucketExists("newbucket") {
 		t.Fatal("bucket should exist after create")
+	}
+}
+
+func TestStorage_DeleteObject_InvalidNameReturnsError(t *testing.T) {
+	s := NewStorage(t.TempDir())
+
+	if err := s.DeleteObject("..", "k"); !errors.Is(err, errInvalidName) {
+		t.Errorf("DeleteObject(..) error = %v, want errInvalidName", err)
+	}
+	if err := s.DeleteObject("b", "../escape"); !errors.Is(err, errInvalidName) {
+		t.Errorf("DeleteObject(b, ../escape) error = %v, want errInvalidName", err)
+	}
+}
+
+func TestStorage_DeleteObject_MissingFilesReturnsNil(t *testing.T) {
+	s := NewStorage(t.TempDir())
+
+	if err := s.DeleteObject("b", "never-existed.txt"); err != nil {
+		t.Errorf("DeleteObject on never-existed key = %v, want nil (idempotent)", err)
 	}
 }

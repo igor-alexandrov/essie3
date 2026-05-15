@@ -160,12 +160,12 @@ func (s *Storage) HeadObject(bucket, key string) (*ObjectMeta, error) {
 	return s.readMeta(bucket, key)
 }
 
-func (s *Storage) DeleteObject(bucket, key string) {
+func (s *Storage) DeleteObject(bucket, key string) error {
 	if err := validateName(bucket); err != nil {
-		return
+		return err
 	}
 	if err := validateName(key); err != nil {
-		return
+		return err
 	}
 	mu := s.keyMutex(bucket, key)
 	mu.Lock()
@@ -176,6 +176,7 @@ func (s *Storage) DeleteObject(bucket, key string) {
 	if err := os.Remove(s.metaPath(bucket, key)); err != nil && !os.IsNotExist(err) {
 		log.Printf("delete meta %s/%s: %v", bucket, key, err)
 	}
+	return nil
 }
 
 func (s *Storage) CopyObject(srcBucket, srcKey, dstBucket, dstKey string) (string, error) {
