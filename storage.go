@@ -130,6 +130,10 @@ func (s *Storage) GetObject(bucket, key string) (*StoredObject, error) {
 		return nil, err
 	}
 
+	mu := s.keyMutex(bucket, key)
+	mu.RLock()
+	defer mu.RUnlock()
+
 	body, err := os.ReadFile(s.objectPath(bucket, key))
 	if err != nil {
 		return nil, err
@@ -150,6 +154,9 @@ func (s *Storage) HeadObject(bucket, key string) (*ObjectMeta, error) {
 	if err := validateName(key); err != nil {
 		return nil, err
 	}
+	mu := s.keyMutex(bucket, key)
+	mu.RLock()
+	defer mu.RUnlock()
 	return s.readMeta(bucket, key)
 }
 
@@ -160,6 +167,9 @@ func (s *Storage) DeleteObject(bucket, key string) {
 	if err := validateName(key); err != nil {
 		return
 	}
+	mu := s.keyMutex(bucket, key)
+	mu.Lock()
+	defer mu.Unlock()
 	if err := os.Remove(s.objectPath(bucket, key)); err != nil && !os.IsNotExist(err) {
 		log.Printf("delete object %s/%s: %v", bucket, key, err)
 	}

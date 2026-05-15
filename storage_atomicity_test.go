@@ -129,3 +129,90 @@ func TestStorage_ConcurrentPutsAreConsistent(t *testing.T) {
 		t.Errorf("ContentLength = %d, want %d", obj.Meta.ContentLength, len(obj.Body))
 	}
 }
+
+func TestStorage_ConcurrentPutAndGet(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	if err := s.CreateBucket("b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutObject("b", "k", []byte("seed"), &ObjectMeta{ContentType: "text/plain"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const iters = 200
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iters; i++ {
+			body := []byte(fmt.Sprintf("body-%03d", i))
+			if _, err := s.PutObject("b", "k", body, &ObjectMeta{ContentType: "text/plain"}); err != nil {
+				t.Errorf("PutObject: %v", err)
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iters; i++ {
+			obj, err := s.GetObject("b", "k")
+			if err != nil {
+				t.Errorf("GetObject: %v", err)
+				return
+			}
+			wantETag := fmt.Sprintf("\"%x\"", md5.Sum(obj.Body))
+			if obj.Meta.ETag != wantETag {
+				t.Errorf("iter %d: ETag = %q, want %q (body/meta mismatch)", i, obj.Meta.ETag, wantETag)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+}
+
+func TestStorage_ConcurrentDeleteAndGet(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	if err := s.CreateBucket("b"); err != nil {
+		t.Fatal(err)
+	}
+
+	const iters = 200
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iters; i++ {
+			body := []byte(fmt.Sprintf("body-%03d", i))
+			if _, err := s.PutObject("b", "k", body, &ObjectMeta{ContentType: "text/plain"}); err != nil {
+				t.Errorf("PutObject: %v", err)
+				return
+			}
+			s.DeleteObject("b", "k")
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iters; i++ {
+			obj, err := s.GetObject("b", "k")
+			if err != nil {
+				if !os.IsNotExist(err) {
+					t.Errorf("GetObject: unexpected err %v", err)
+					return
+				}
+				continue
+			}
+			wantETag := fmt.Sprintf("\"%x\"", md5.Sum(obj.Body))
+			if obj.Meta.ETag != wantETag {
+				t.Errorf("iter %d: ETag = %q, want %q (body/meta mismatch)", i, obj.Meta.ETag, wantETag)
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+}
