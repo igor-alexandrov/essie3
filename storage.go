@@ -83,11 +83,21 @@ func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (
 		return "", err
 	}
 
+	mu := s.keyMutex(bucket, key)
+	mu.Lock()
+	defer mu.Unlock()
+
 	objPath := s.objectPath(bucket, key)
 
 	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
+
+	prevBody, prevErr := os.ReadFile(objPath)
+	if prevErr != nil && !os.IsNotExist(prevErr) {
+		return "", fmt.Errorf("read prev body: %w", prevErr)
+	}
+	hadPrev := prevErr == nil
 
 	etag := fmt.Sprintf("\"%x\"", md5.Sum(body))
 	meta.ETag = etag
@@ -103,6 +113,9 @@ func (s *Storage) PutObject(bucket, key string, body []byte, meta *ObjectMeta) (
 		return "", fmt.Errorf("write object: %w", err)
 	}
 	if err := writeFileAtomic(s.metaPath(bucket, key), metaBytes, 0o644); err != nil {
+		if rbErr := rollbackBody(objPath, prevBody, hadPrev); rbErr != nil {
+			log.Printf("rollback after meta-write failure for %s/%s: %v", bucket, key, rbErr)
+		}
 		return "", fmt.Errorf("write meta: %w", err)
 	}
 

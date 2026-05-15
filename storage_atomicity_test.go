@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -79,5 +81,51 @@ func TestRollbackBody_NonExistentFileWithNoPrev(t *testing.T) {
 	p := filepath.Join(dir, "absent")
 	if err := rollbackBody(p, nil, false); err != nil {
 		t.Errorf("unexpected error for absent file: %v", err)
+	}
+}
+
+func TestStorage_ConcurrentPutsAreConsistent(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	if err := s.CreateBucket("b"); err != nil {
+		t.Fatal(err)
+	}
+
+	const writers = 20
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := []byte(fmt.Sprintf("writer-%02d", i))
+			meta := &ObjectMeta{ContentType: "text/plain"}
+			if _, err := s.PutObject("b", "k", body, meta); err != nil {
+				t.Errorf("PutObject(writer %d): %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	obj, err := s.GetObject("b", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var matched bool
+	for i := 0; i < writers; i++ {
+		if string(obj.Body) == fmt.Sprintf("writer-%02d", i) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		t.Errorf("body = %q, doesn't match any writer's input", obj.Body)
+	}
+
+	wantETag := fmt.Sprintf("\"%x\"", md5.Sum(obj.Body))
+	if obj.Meta.ETag != wantETag {
+		t.Errorf("ETag = %q, want %q (body/meta mismatch)", obj.Meta.ETag, wantETag)
+	}
+	if obj.Meta.ContentLength != int64(len(obj.Body)) {
+		t.Errorf("ContentLength = %d, want %d", obj.Meta.ContentLength, len(obj.Body))
 	}
 }
