@@ -207,10 +207,11 @@ func TestParseFallbackMode(t *testing.T) {
 		want    FallbackMode
 		wantErr bool
 	}{
-		{"", FallbackModePool, false},
+		{"", FallbackModePreferPool, false},
+		{"prefer-pool", FallbackModePreferPool, false},
 		{"pool", FallbackModePool, false},
 		{"generate", FallbackModeGenerate, false},
-		{"both", FallbackModeBoth, false},
+		{"both", 0, true},
 		{"POOL", 0, true},
 		{"bogus", 0, true},
 		{" pool", 0, true},
@@ -263,25 +264,25 @@ func TestFallbackSelect_GenerateMode_UnsupportedExtNil(t *testing.T) {
 	}
 }
 
-func TestFallbackSelect_BothMode_PoolFirst(t *testing.T) {
-	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModeBoth)
+func TestFallbackSelect_PreferPoolMode_PoolFirst(t *testing.T) {
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePreferPool)
 	p := fb.Select("images/photo.jpg")
 	if p == nil {
-		t.Fatal("expected placeholder under both mode")
+		t.Fatal("expected placeholder under prefer-pool mode")
 	}
 	if p.Generated {
-		t.Errorf("expected pool placeholder first under both mode, got generated")
+		t.Errorf("expected pool placeholder first under prefer-pool mode, got generated")
 	}
 	if !strings.HasSuffix(p.Path, ".jpg") {
 		t.Errorf("expected jpg pool placeholder, got Path=%q", p.Path)
 	}
 }
 
-func TestFallbackSelect_BothMode_GenerateFallback(t *testing.T) {
+func TestFallbackSelect_PreferPoolMode_GenerateFallback(t *testing.T) {
 	// Empty pool dir → no pool matches; generate kicks in for supported
 	// extensions.
 	dir := t.TempDir()
-	fb, _ := NewFallback(dir, DefaultInlineExtensions, FallbackModeBoth)
+	fb, _ := NewFallback(dir, DefaultInlineExtensions, FallbackModePreferPool)
 
 	p := fb.Select("a/b.png")
 	if p == nil || !p.Generated {

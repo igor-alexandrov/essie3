@@ -15,29 +15,31 @@ import (
 )
 
 // FallbackMode controls whether the fallback consults the curated
-// placeholder pool, the on-demand generator, or both.
+// placeholder pool, the on-demand generator, or prefers the pool and
+// generates on a miss.
 type FallbackMode int
 
 const (
 	FallbackModePool FallbackMode = iota
 	FallbackModeGenerate
-	FallbackModeBoth
+	FallbackModePreferPool
 )
 
-// ParseFallbackMode maps "pool"|"generate"|"both" to the constant.
-// The empty string returns FallbackModePool so an unset env var
-// preserves existing behavior. Anything else returns an error so the
+// ParseFallbackMode maps "pool"|"generate"|"prefer-pool" to the
+// constant. The empty string returns FallbackModePreferPool, the
+// default: an unset env var consults the curated pool first and
+// generates on a pool miss. Anything else returns an error so the
 // caller can fail fast.
 func ParseFallbackMode(s string) (FallbackMode, error) {
 	switch s {
-	case "", "pool":
+	case "", "prefer-pool":
+		return FallbackModePreferPool, nil
+	case "pool":
 		return FallbackModePool, nil
 	case "generate":
 		return FallbackModeGenerate, nil
-	case "both":
-		return FallbackModeBoth, nil
 	default:
-		return 0, fmt.Errorf("unknown mode %q (want pool|generate|both)", s)
+		return 0, fmt.Errorf("unknown mode %q (want pool|generate|prefer-pool)", s)
 	}
 }
 
@@ -212,7 +214,7 @@ func (fb *Fallback) Select(key string) *Placeholder {
 	switch fb.mode {
 	case FallbackModeGenerate:
 		return fb.generate(key)
-	case FallbackModeBoth:
+	case FallbackModePreferPool:
 		if p := fb.selectFromPool(key); p != nil {
 			return p
 		}

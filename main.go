@@ -102,7 +102,7 @@ func getenv(key, fallback string) string {
 
 func fallbackModeLabel(s string) string {
 	if s == "" {
-		return "pool (default)"
+		return "prefer-pool (default)"
 	}
 	return s
 }

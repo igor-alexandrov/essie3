@@ -883,12 +883,12 @@ func TestHandler_Generate_TwoRequestsIdentical(t *testing.T) {
 	}
 }
 
-func TestHandler_Both_PoolFirst(t *testing.T) {
-	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeBoth)
+func TestHandler_PreferPool_PoolFirst(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModePreferPool)
 	defer srv.Close()
 
-	// .pdf is in the pool but not generatable; under both mode the pool
-	// match must win.
+	// .pdf is in the pool but not generatable; under prefer-pool mode the
+	// pool match must win.
 	resp, err := http.Get(srv.URL + "/b/missing/report.pdf")
 	if err != nil {
 		t.Fatal(err)
@@ -907,10 +907,10 @@ func TestHandler_Both_PoolFirst(t *testing.T) {
 	}
 }
 
-func TestHandler_Both_GenerateWhenPoolMisses(t *testing.T) {
+func TestHandler_PreferPool_GenerateWhenPoolMisses(t *testing.T) {
 	// Empty pool dir → no pool match for any extension; .png falls through
 	// to the generator.
-	srv := testServerWithFallback(t, t.TempDir(), FallbackModeBoth)
+	srv := testServerWithFallback(t, t.TempDir(), FallbackModePreferPool)
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/b/missing/key.png")
