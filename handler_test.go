@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -20,8 +22,17 @@ func testServerWithAuth(t *testing.T, auth AuthConfig) *httptest.Server {
 	t.Helper()
 	dataDir := t.TempDir()
 	s := NewStorage(dataDir)
-	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions)
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePool)
 	h := NewHandler(s, fb, auth)
+	return httptest.NewServer(h)
+}
+
+func testServerWithFallback(t *testing.T, fallbackDir string, mode FallbackMode) *httptest.Server {
+	t.Helper()
+	dataDir := t.TempDir()
+	s := NewStorage(dataDir)
+	fb, _ := NewFallback(fallbackDir, DefaultInlineExtensions, mode)
+	h := NewHandler(s, fb, AuthConfig{})
 	return httptest.NewServer(h)
 }
 
@@ -701,5 +712,220 @@ func TestHandler_CopyObject_MissingSourceReturns404(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "<Key>missing-key.txt</Key>") {
 		t.Errorf("body missing <Key>missing-key.txt</Key>:\n%s", body)
+	}
+}
+
+func TestHandler_Generate_GetPNG(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/anybucket/missing/photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if ar := resp.Header.Get("Accept-Ranges"); ar != "bytes" {
+		t.Errorf("Accept-Ranges = %q, want bytes", ar)
+	}
+	etag := resp.Header.Get("ETag")
+	if len(etag) != 34 || etag[0] != '"' || etag[33] != '"' {
+		t.Errorf("ETag = %q, want a quoted 32-hex-char string", etag)
+	}
+	if lm := resp.Header.Get("Last-Modified"); lm == "" {
+		t.Errorf("Last-Modified is empty")
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	img, err := png.Decode(bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("png.Decode: %v", err)
+	}
+	if img.Bounds().Dx() != canvasSize || img.Bounds().Dy() != canvasSize {
+		t.Errorf("decoded PNG = %dx%d, want %dx%d",
+			img.Bounds().Dx(), img.Bounds().Dy(), canvasSize, canvasSize)
+	}
+}
+
+func TestHandler_Generate_GetJPEG(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/b/missing/photo.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("Content-Type = %q, want image/jpeg", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if _, err := jpeg.Decode(bytes.NewReader(body)); err != nil {
+		t.Fatalf("jpeg.Decode: %v", err)
+	}
+}
+
+func TestHandler_Generate_UnsupportedExtNoSuchKey(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/b/missing/doc.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 404 {
+		t.Fatalf("status = %d, want 404 (pdf is in pool but not generatable, pool disabled)", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "<Code>NoSuchKey</Code>") {
+		t.Errorf("body missing NoSuchKey:\n%s", body)
+	}
+}
+
+func TestHandler_Generate_HeadEmptyBody(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("HEAD", srv.URL+"/b/missing/photo.png", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if et := resp.Header.Get("ETag"); et == "" {
+		t.Errorf("HEAD missing ETag")
+	}
+	if lm := resp.Header.Get("Last-Modified"); lm == "" {
+		t.Errorf("HEAD missing Last-Modified")
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) != 0 {
+		t.Errorf("HEAD returned %d body bytes, want 0", len(body))
+	}
+}
+
+func TestHandler_Generate_RangeRequest(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	// First fetch the full body to learn its length.
+	full, err := http.Get(srv.URL + "/b/r/key.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullBody, _ := io.ReadAll(full.Body)
+	full.Body.Close()
+	total := len(fullBody)
+	if total < 200 {
+		t.Fatalf("generated body too short for range test: %d bytes", total)
+	}
+
+	req, _ := http.NewRequest("GET", srv.URL+"/b/r/key.png", nil)
+	req.Header.Set("Range", "bytes=0-99")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 206 {
+		t.Fatalf("status = %d, want 206", resp.StatusCode)
+	}
+	wantCR := fmt.Sprintf("bytes 0-99/%d", total)
+	if cr := resp.Header.Get("Content-Range"); cr != wantCR {
+		t.Errorf("Content-Range = %q, want %q", cr, wantCR)
+	}
+	sliced, _ := io.ReadAll(resp.Body)
+	if !bytes.Equal(sliced, fullBody[:100]) {
+		t.Errorf("sliced body does not match first 100 bytes of full body")
+	}
+}
+
+func TestHandler_Generate_TwoRequestsIdentical(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	get := func() ([]byte, string) {
+		resp, err := http.Get(srv.URL + "/b/stable/key.png")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return body, resp.Header.Get("ETag")
+	}
+	a, etagA := get()
+	b, etagB := get()
+	if !bytes.Equal(a, b) {
+		t.Errorf("two GETs on the same key returned different bytes")
+	}
+	if etagA != etagB {
+		t.Errorf("two GETs on the same key returned different ETags: %q vs %q", etagA, etagB)
+	}
+}
+
+func TestHandler_Both_PoolFirst(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeBoth)
+	defer srv.Close()
+
+	// .pdf is in the pool but not generatable; under both mode the pool
+	// match must win.
+	resp, err := http.Get(srv.URL + "/b/missing/report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	// Pool placeholders carry no ETag in this codebase.
+	if et := resp.Header.Get("ETag"); et != "" {
+		t.Errorf("ETag = %q on pool placeholder, want empty (pool placeholders are ETag-less)", et)
+	}
+	if lm := resp.Header.Get("Last-Modified"); lm != "" {
+		t.Errorf("Last-Modified = %q on pool placeholder, want empty", lm)
+	}
+}
+
+func TestHandler_Both_GenerateWhenPoolMisses(t *testing.T) {
+	// Empty pool dir → no pool match for any extension; .png falls through
+	// to the generator.
+	srv := testServerWithFallback(t, t.TempDir(), FallbackModeBoth)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/b/missing/key.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	if et := resp.Header.Get("ETag"); et == "" {
+		t.Errorf("generated response missing ETag")
 	}
 }

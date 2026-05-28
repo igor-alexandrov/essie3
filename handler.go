@@ -183,9 +183,15 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 				return
 			}
 			totalLen := int64(len(p.Body))
-			out := evaluateRange(r, totalLen, "")
+			out := evaluateRange(r, totalLen, p.ETag)
 			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
+			if p.ETag != "" {
+				w.Header().Set("ETag", p.ETag)
+			}
+			if p.Generated {
+				w.Header().Set("Last-Modified", h.fallback.LastModified().Format(http.TimeFormat))
+			}
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
 			switch {
 			case out.serveFull:
@@ -262,9 +268,15 @@ func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucke
 				return
 			}
 			totalLen := int64(len(p.Body))
-			out := evaluateRange(r, totalLen, "")
+			out := evaluateRange(r, totalLen, p.ETag)
 			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
+			if p.ETag != "" {
+				w.Header().Set("ETag", p.ETag)
+			}
+			if p.Generated {
+				w.Header().Set("Last-Modified", h.fallback.LastModified().Format(http.TimeFormat))
+			}
 			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
 			switch {
 			case out.serveFull:

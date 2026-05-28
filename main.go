@@ -23,7 +23,12 @@ func main() {
 	if v, ok := os.LookupEnv("ESSIE3_FALLBACK_INLINE_EXTENSIONS"); ok {
 		inlineExts = ParseExtList(v)
 	}
-	fallback, err := NewFallback(fallbackDataDir, inlineExts)
+	modeStr := os.Getenv("ESSIE3_FALLBACK_MODE")
+	mode, err := ParseFallbackMode(modeStr)
+	if err != nil {
+		log.Fatalf("invalid ESSIE3_FALLBACK_MODE %q: %v", modeStr, err)
+	}
+	fallback, err := NewFallback(fallbackDataDir, inlineExts, mode)
 	if err != nil {
 		log.Fatalf("failed to load fallback data: %v", err)
 	}
@@ -38,6 +43,7 @@ func main() {
 	fmt.Printf("essie3 starting on :%s\n", port)
 	fmt.Printf("  data:     %s\n", dataDir)
 	fmt.Printf("  fallback: %s (%d placeholders)\n", fallbackDataDir, fallback.Count())
+	fmt.Printf("  fallback mode: %s\n", fallbackModeLabel(modeStr))
 	fmt.Printf("  inline extensions: %s\n", strings.Join(inlineExts, ", "))
 	if auth.Enabled() {
 		fmt.Printf("  auth:     enabled (fallback_public=%v)\n", auth.FallbackPublic)
@@ -92,4 +98,11 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func fallbackModeLabel(s string) string {
+	if s == "" {
+		return "pool (default)"
+	}
+	return s
 }
