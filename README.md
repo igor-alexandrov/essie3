@@ -19,7 +19,9 @@ yet, so your UI doesn't render broken images.
 - HTTP `Range` requests (single-range) with `If-Range` ETag matching
   on objects and fallback placeholders
 - Deterministic fallback placeholders by file extension
-  (.jpg / .jpeg / .png / .gif / .webp / .pdf / .mp4 / .mov / .webm / .avi)
+  (.jpg / .jpeg / .png / .gif / .webp / .pdf / .mp4 / .mov / .webm / .avi),
+  plus an optional on-demand bubble-identicon generator for PNG / JPEG
+  keys
 - Atomic object writes (temp-file + rename)
 - Path-traversal protection on bucket and key names
 - Optional access-key auth with `x-amz-acl: public-read` escape hatch
@@ -70,6 +72,7 @@ All configuration via environment variables:
 | `ESSIE3_DATA_DIR`                   | `./data`          | Where uploaded objects are stored |
 | `ESSIE3_FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of fallback placeholders|
 | `ESSIE3_FALLBACK_INLINE_EXTENSIONS` | `.jpg`, `.jpeg`<br>`.png`, `.gif`, `.webp`<br>`.pdf`<br>`.mp4`, `.mov`, `.webm`, `.avi` | Comma-separated extensions served inline on fallback responses; everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. Example: `ESSIE3_FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf` |
+| `ESSIE3_FALLBACK_MODE`              | `prefer-pool`     | `prefer-pool` (default) → try the curated pool first, generate if no pool match. `pool` → only curated placeholders from `ESSIE3_FALLBACK_DATA_DIR`. `generate` → only on-demand bubble identicons (PNG/JPEG keys; other extensions return `NoSuchKey`). Generated responses carry an `ETag` (MD5 of the body, S3 convention) and a `Last-Modified` set at process start. |
 | `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, essie3 requires requests to present this key in the `Authorization` header's SigV4 `Credential=` portion. Signatures are not verified — only the access-key string is compared. When unset, all requests are served anonymously (default behavior). |
 | `ESSIE3_FALLBACK_PUBLIC`            | `false`           | Only relevant when `ESSIE3_ACCESS_KEY` is set. `true` → fallback placeholders are served anonymously even without credentials. `false` → fallbacks follow the same auth check as real objects. |
 | `ESSIE3_DEBUG`                      | *(unset)*         | When set to `true`, log full request and response details (method, path, headers, status, timing) to stderr. Useful when debugging integration tests, especially auth-failure paths. Off by default. |
@@ -200,6 +203,26 @@ fallback-data/
 
 If a key's extension has no matching placeholders, essie3 returns the
 usual `NoSuchKey` error.
+
+### Generated placeholders
+
+The default mode, `prefer-pool`, enables an on-demand generator that
+renders a **bubble identicon** seeded by `MD5(key)` whenever the curated
+pool has no match: 16 translucent overlapping circles on a white canvas,
+512×512, with colors from the D3 `category20` palette. The same key
+always produces byte-identical output, and successive requests carry the
+same `ETag` so HTTP caching works. Set `ESSIE3_FALLBACK_MODE=pool` to
+disable the generator and serve only curated placeholders.
+
+| Mode          | Behavior                                                              |
+| ------------- | --------------------------------------------------------------------- |
+| `prefer-pool` | Default — pool first; generate as a fallback when the pool has no match. |
+| `pool`        | Only files from the fallback dir.                                     |
+| `generate`    | Only generated images. PNG and JPEG only; other extensions → `NoSuchKey`. |
+
+Generated responses include `ETag: "<md5 hex>"` (S3 single-PUT
+convention) and `Last-Modified` set to the server's start time, so
+`If-None-Match` and `If-Range` work naturally.
 
 ## Storage layout
 

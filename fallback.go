@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -9,7 +11,37 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// FallbackMode controls whether the fallback consults the curated
+// placeholder pool, the on-demand generator, or prefers the pool and
+// generates on a miss.
+type FallbackMode int
+
+const (
+	FallbackModePool FallbackMode = iota
+	FallbackModeGenerate
+	FallbackModePreferPool
+)
+
+// ParseFallbackMode maps "pool"|"generate"|"prefer-pool" to the
+// constant. The empty string returns FallbackModePreferPool, the
+// default: an unset env var consults the curated pool first and
+// generates on a pool miss. Anything else returns an error so the
+// caller can fail fast.
+func ParseFallbackMode(s string) (FallbackMode, error) {
+	switch s {
+	case "", "prefer-pool":
+		return FallbackModePreferPool, nil
+	case "pool":
+		return FallbackModePool, nil
+	case "generate":
+		return FallbackModeGenerate, nil
+	default:
+		return 0, fmt.Errorf("unknown mode %q (want pool|generate|prefer-pool)", s)
+	}
+}
 
 // DefaultInlineExtensions is the set of extensions served with
 // Content-Disposition: inline when a fallback placeholder is returned.
@@ -38,18 +70,29 @@ type Placeholder struct {
 	Path        string
 	Body        []byte
 	ContentType string
+	// ETag is set on generated placeholders ("<md5 hex>" wrapped in
+	// double quotes, S3 single-PUT convention). Empty for pool
+	// placeholders.
+	ETag string
+	// Generated is true when this placeholder was produced by the
+	// on-demand generator rather than loaded from disk.
+	Generated bool
 }
 
 type Fallback struct {
-	all        []*Placeholder
-	byExt      map[string][]*Placeholder
-	inlineExts map[string]bool
+	all         []*Placeholder
+	byExt       map[string][]*Placeholder
+	inlineExts  map[string]bool
+	mode        FallbackMode
+	generatedAt time.Time
 }
 
-func NewFallback(dir string, inlineExts []string) (*Fallback, error) {
+func NewFallback(dir string, inlineExts []string, mode FallbackMode) (*Fallback, error) {
 	fb := &Fallback{
-		byExt:      make(map[string][]*Placeholder),
-		inlineExts: make(map[string]bool, len(inlineExts)),
+		byExt:       make(map[string][]*Placeholder),
+		inlineExts:  make(map[string]bool, len(inlineExts)),
+		mode:        mode,
+		generatedAt: time.Now().UTC(),
 	}
 	for _, e := range inlineExts {
 		fb.inlineExts[normalizeExt(normalizeExtInput(e))] = true
@@ -164,7 +207,24 @@ func ParseExtList(s string) []string {
 	return out
 }
 
+// Select returns the placeholder to serve for a missing key under the
+// configured mode. Returns nil to let the caller fall through to
+// NoSuchKey.
 func (fb *Fallback) Select(key string) *Placeholder {
+	switch fb.mode {
+	case FallbackModeGenerate:
+		return fb.generate(key)
+	case FallbackModePreferPool:
+		if p := fb.selectFromPool(key); p != nil {
+			return p
+		}
+		return fb.generate(key)
+	default: // FallbackModePool
+		return fb.selectFromPool(key)
+	}
+}
+
+func (fb *Fallback) selectFromPool(key string) *Placeholder {
 	ext := normalizeExt(strings.ToLower(filepath.Ext(key)))
 	pool := fb.byExt[ext]
 	if len(pool) == 0 {
@@ -174,4 +234,26 @@ func (fb *Fallback) Select(key string) *Placeholder {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return pool[int(h.Sum32())%len(pool)]
+}
+
+func (fb *Fallback) generate(key string) *Placeholder {
+	body, ct := generateImage(key)
+	if body == nil {
+		return nil
+	}
+	sum := md5.Sum(body)
+	return &Placeholder{
+		Body:        body,
+		ContentType: ct,
+		ETag:        `"` + hex.EncodeToString(sum[:]) + `"`,
+		Generated:   true,
+	}
+}
+
+// LastModified returns the timestamp to use for the Last-Modified
+// header on generated placeholders. Set once at construction time
+// (process start), so it's stable across all generated responses
+// from this process.
+func (fb *Fallback) LastModified() time.Time {
+	return fb.generatedAt
 }
