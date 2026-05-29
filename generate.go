@@ -87,6 +87,16 @@ func bubbleFromDigest(digest [16]byte, i int) bubbleSpec {
 // circleMask builds an anti-aliased disc mask of side 2*ceil(r). Each
 // pixel's alpha is the fraction of 4×4 subsamples that fall inside the
 // disc, scaled to 0..255.
+//
+// Only pixels straddling the disc edge actually need subsampling — for a
+// large disc that's a thin ring, a tiny fraction of the total. Pixels
+// whose entire area lies inside the disc are fully covered (alpha 255)
+// and those entirely outside are empty (alpha 0), so we test the pixel
+// center against the edge ± a half-pixel-diagonal guard band and run the
+// 4×4 loop only for the ambiguous remainder. The guard band is the
+// conservative full-diagonal (√2/2), wider than the subsample spread, so
+// the result is byte-identical to subsampling every pixel — locked in by
+// TestCircleMask_MatchesFullSupersample.
 func circleMask(r float64) *image.Alpha {
 	dim := int(math.Ceil(r)) * 2
 	if dim < 1 {
@@ -95,21 +105,36 @@ func circleMask(r float64) *image.Alpha {
 	mask := image.NewAlpha(image.Rect(0, 0, dim, dim))
 	center := float64(dim) / 2
 	r2 := r * r
+	const halfDiag = math.Sqrt2 / 2
+	rIn := r - halfDiag
+	rIn2 := rIn * rIn
+	rOut := r + halfDiag
+	rOut2 := rOut * rOut
 	for py := 0; py < dim; py++ {
 		for px := 0; px < dim; px++ {
-			count := 0
-			for sy := 0; sy < 4; sy++ {
-				for sx := 0; sx < 4; sx++ {
-					fx := float64(px) + (float64(sx)+0.5)/4
-					fy := float64(py) + (float64(sy)+0.5)/4
-					dx := fx - center
-					dy := fy - center
-					if dx*dx+dy*dy <= r2 {
-						count++
+			cx := float64(px) + 0.5 - center
+			cy := float64(py) + 0.5 - center
+			cd2 := cx*cx + cy*cy
+			switch {
+			case rIn > 0 && cd2 <= rIn2:
+				mask.SetAlpha(px, py, color.Alpha{A: 255})
+			case cd2 >= rOut2:
+				// fully outside the disc — leave the zero value
+			default:
+				count := 0
+				for sy := 0; sy < 4; sy++ {
+					for sx := 0; sx < 4; sx++ {
+						fx := float64(px) + (float64(sx)+0.5)/4
+						fy := float64(py) + (float64(sy)+0.5)/4
+						dx := fx - center
+						dy := fy - center
+						if dx*dx+dy*dy <= r2 {
+							count++
+						}
 					}
 				}
+				mask.SetAlpha(px, py, color.Alpha{A: uint8(count * 255 / 16)})
 			}
-			mask.SetAlpha(px, py, color.Alpha{A: uint8(count * 255 / 16)})
 		}
 	}
 	return mask

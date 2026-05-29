@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
@@ -232,6 +233,56 @@ func TestRenderIdenticon_NotUniformlyWhite(t *testing.T) {
 	}
 	if off == 0 {
 		t.Errorf("canvas is uniformly white — no bubbles drawn")
+	}
+}
+
+// referenceCircleMask is the original full-supersample implementation,
+// kept here as the correctness oracle for the optimized circleMask:
+// every pixel runs the 4×4 subsample loop. The production circleMask
+// skips that loop for pixels wholly inside/outside the disc, and must
+// produce byte-identical output.
+func referenceCircleMask(r float64) *image.Alpha {
+	dim := int(ceilFloat(r)) * 2
+	if dim < 1 {
+		dim = 1
+	}
+	mask := image.NewAlpha(image.Rect(0, 0, dim, dim))
+	center := float64(dim) / 2
+	r2 := r * r
+	for py := 0; py < dim; py++ {
+		for px := 0; px < dim; px++ {
+			count := 0
+			for sy := 0; sy < 4; sy++ {
+				for sx := 0; sx < 4; sx++ {
+					fx := float64(px) + (float64(sx)+0.5)/4
+					fy := float64(py) + (float64(sy)+0.5)/4
+					dx := fx - center
+					dy := fy - center
+					if dx*dx+dy*dy <= r2 {
+						count++
+					}
+				}
+			}
+			mask.SetAlpha(px, py, color.Alpha{A: uint8(count * 255 / 16)})
+		}
+	}
+	return mask
+}
+
+func TestCircleMask_MatchesFullSupersample(t *testing.T) {
+	// Cover small/large/fractional radii, including the bubble radius
+	// bounds (minRadius, maxRadius) the generator actually produces.
+	for _, r := range []float64{1, 5, 5.7, 6, 7.3, 50, 99.9, 100, 131, 200, 256} {
+		got := circleMask(r)
+		want := referenceCircleMask(r)
+		if got.Rect != want.Rect {
+			t.Fatalf("r=%v rect = %v, want %v", r, got.Rect, want.Rect)
+		}
+		for i := range want.Pix {
+			if got.Pix[i] != want.Pix[i] {
+				t.Fatalf("r=%v pixel %d alpha = %d, want %d", r, i, got.Pix[i], want.Pix[i])
+			}
+		}
 	}
 }
 
