@@ -1,36 +1,80 @@
 # essie3
 
-A tiny, filesystem-backed S3-compatible server for local development and
-testing. Speaks enough of the S3 REST API to stand in for AWS S3 when
-running integration tests, demos, or offline dev environments.
+**A tiny, filesystem-backed S3-compatible server for local development and testing.**
+
+[![Release](https://img.shields.io/github/v/release/igor-alexandrov/essie3?sort=semver)](https://github.com/igor-alexandrov/essie3/releases)
+[![CI](https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml/badge.svg)](https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/igor-alexandrov/essie3)](go.mod)
+[![License](https://img.shields.io/github/license/igor-alexandrov/essie3)](LICENSE)
+
+essie3 speaks enough of the S3 REST API to stand in for AWS S3 when running
+integration tests, demos, or offline dev environments. It's a single Go
+binary with **zero third-party dependencies**.
 
 When an object is missing, essie3 can return a deterministic **fallback
-placeholder** (e.g. a generic image or PDF) instead of `404 NoSuchKey` —
-useful when seeding a dev environment where the real assets don't exist
-yet, so your UI doesn't render broken images.
+placeholder** instead of `404 NoSuchKey` — useful when seeding a dev
+environment where the real assets don't exist yet, so your UI doesn't render
+broken images.
+
+> [!WARNING]
+> essie3 is **not** a production S3 replacement — no SigV4 signature
+> verification, no versioning, no real `ListObjects`. It exists to stand in
+> for AWS S3 in local dev and integration tests. (Optional access-key auth is
+> available for tests that need to exercise the auth-failure path; see
+> [`ESSIE3_ACCESS_KEY`](#configuration).)
+
+## Quick start
+
+```sh
+go run .                                   # listens on :9000
+
+# In another shell:
+curl -X PUT http://localhost:9000/mybucket # create a bucket
+curl -X PUT --data-binary @photo.jpg \
+  -H "Content-Type: image/jpeg" \
+  http://localhost:9000/mybucket/photo.jpg # upload
+curl http://localhost:9000/mybucket/photo.jpg -o out.jpg  # download
+```
+
+That's it. Point any S3 client at `http://localhost:9000` and go.
+
+## Contents
+
+- [Features](#features)
+- [Running](#running)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Range requests](#range-requests)
+- [Auth (optional)](#auth-optional)
+- [Fallback placeholders](#fallback-placeholders)
+- [Storage layout](#storage-layout)
+- [Development](#development)
+- [License](#license)
 
 ## Features
 
-- S3-style `PUT`, `GET`, `HEAD`, `DELETE`, `POST` (multipart), and `COPY`
-  for objects
+**S3 API**
+
+- `PUT`, `GET`, `HEAD`, `DELETE`, `POST` (multipart), and `COPY` for objects
 - Bucket create / head / list (stub)
 - CORS enabled for browser uploads
 - Per-object metadata persisted as JSON sidecar files
-- HTTP `Range` requests (single-range) with `If-Range` ETag matching
-  on objects and fallback placeholders
+- HTTP `Range` requests (single-range) with `If-Range` ETag matching, on
+  objects and fallback placeholders
+
+**Fallbacks**
+
 - Deterministic fallback placeholders by file extension
-  (.jpg / .jpeg / .png / .gif / .webp / .pdf / .mp4 / .mov / .webm / .avi),
-  plus an optional on-demand bubble-identicon generator for PNG / JPEG
-  keys
+  (`.jpg` / `.jpeg` / `.png` / `.gif` / `.webp` / `.pdf` / `.mp4` / `.mov` /
+  `.webm` / `.avi`)
+- Optional on-demand bubble-identicon generator for PNG / JPEG keys
+
+**Safety & ops**
+
 - Atomic object writes (temp-file + rename)
 - Path-traversal protection on bucket and key names
-- Optional access-key auth with `x-amz-acl: public-read` escape hatch
+- Optional access-key auth with an `x-amz-acl: public-read` escape hatch
 - Graceful shutdown on `SIGINT` / `SIGTERM`
-
-This is **not** a production S3 replacement — no SigV4 signature
-verification, no versioning, no real `ListObjects`. (Optional
-access-key auth is available for tests that need to exercise the
-auth-failure path; see the `ESSIE3_ACCESS_KEY` env var below.)
 
 ## Running
 
@@ -56,38 +100,34 @@ services:
       ESSIE3_FALLBACK_DATA_DIR: /fallback-data
 ```
 
-Then run:
-
 ```sh
 docker compose up
 ```
 
-### Configuration
+## Configuration
 
-All configuration via environment variables:
+All configuration is via environment variables. The fallback-related options
+have dedicated sections below with the full details.
 
-| Variable                            | Default           | Description                       |
-| ----------------------------------- | ----------------- | --------------------------------- |
-| `ESSIE3_PORT`                       | `9000`            | HTTP port to listen on            |
-| `ESSIE3_DATA_DIR`                   | `./data`          | Where uploaded objects are stored |
-| `ESSIE3_FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of fallback placeholders|
-| `ESSIE3_FALLBACK_INLINE_EXTENSIONS` | `.jpg`, `.jpeg`<br>`.png`, `.gif`, `.webp`<br>`.pdf`<br>`.mp4`, `.mov`, `.webm`, `.avi` | Comma-separated extensions served inline on fallback responses; everything else is served as `attachment`. Set to empty string to serve all fallbacks as attachments. Example: `ESSIE3_FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf` |
-| `ESSIE3_FALLBACK_MODE`              | `prefer-pool`     | `prefer-pool` (default) → try the curated pool first, generate if no pool match. `pool` → only curated placeholders from `ESSIE3_FALLBACK_DATA_DIR`. `generate` → only on-demand bubble identicons (PNG/JPEG keys; other extensions return `NoSuchKey`). Generated responses carry an `ETag` (MD5 of the body, S3 convention) and a `Last-Modified` set at process start. |
-| `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, essie3 requires requests to present this key in the `Authorization` header's SigV4 `Credential=` portion. Signatures are not verified — only the access-key string is compared. When unset, all requests are served anonymously (default behavior). |
-| `ESSIE3_FALLBACK_PUBLIC`            | `false`           | Only relevant when `ESSIE3_ACCESS_KEY` is set. `true` → fallback placeholders are served anonymously even without credentials. `false` → fallbacks follow the same auth check as real objects. |
-| `ESSIE3_DEBUG`                      | *(unset)*         | When set to `true`, log full request and response details (method, path, headers, status, timing) to stderr. Useful when debugging integration tests, especially auth-failure paths. Off by default. |
+| Variable                            | Default           | Description                                                                 |
+| ----------------------------------- | ----------------- | --------------------------------------------------------------------------- |
+| `ESSIE3_PORT`                       | `9000`            | HTTP port to listen on.                                                     |
+| `ESSIE3_DATA_DIR`                   | `./data`          | Where uploaded objects are stored.                                          |
+| `ESSIE3_FALLBACK_DATA_DIR`          | `./fallback-data` | Directory of curated fallback placeholders.                                 |
+| `ESSIE3_FALLBACK_MODE`              | `prefer-pool`     | How missing objects are filled. See [Fallback placeholders](#fallback-placeholders). |
+| `ESSIE3_FALLBACK_INLINE_EXTENSIONS` | *(see below)*     | Which fallback extensions are served `inline` vs. `attachment`. See [Content disposition](#content-disposition). |
+| `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, requires this access key on requests. See [Auth](#auth-optional). |
+| `ESSIE3_FALLBACK_PUBLIC`            | `false`           | When auth is on, `true` serves fallbacks anonymously. See [Auth](#auth-optional). |
+| `ESSIE3_DEBUG`                      | *(unset)*         | When `true`, logs full request/response details to stderr.                  |
 
 ## Usage
 
 ### With the AWS CLI
 
 ```sh
-aws --endpoint-url http://localhost:9000 \
-    s3 mb s3://mybucket
-aws --endpoint-url http://localhost:9000 \
-    s3 cp photo.jpg s3://mybucket/photos/photo.jpg
-aws --endpoint-url http://localhost:9000 \
-    s3 cp s3://mybucket/photos/photo.jpg ./downloaded.jpg
+aws --endpoint-url http://localhost:9000 s3 mb s3://mybucket
+aws --endpoint-url http://localhost:9000 s3 cp photo.jpg s3://mybucket/photos/photo.jpg
+aws --endpoint-url http://localhost:9000 s3 cp s3://mybucket/photos/photo.jpg ./downloaded.jpg
 ```
 
 ### With curl
@@ -132,26 +172,29 @@ curl -H "Range: bytes=-256"  http://localhost:9000/mybucket/photos/photo.jpg
 ```
 
 Responses include `Accept-Ranges: bytes`. A satisfiable Range returns
-`206 Partial Content` with `Content-Range: bytes <start>-<end>/<total>`
-and the sliced body. An unsatisfiable Range returns
-`416 Requested Range Not Satisfiable` with an S3-shaped XML body
-(`<Code>InvalidRange</Code>`) and `Content-Range: bytes */<total>`.
+`206 Partial Content` with `Content-Range: bytes <start>-<end>/<total>` and the
+sliced body. An unsatisfiable Range returns `416 Requested Range Not
+Satisfiable` with an S3-shaped XML body (`<Code>InvalidRange</Code>`) and
+`Content-Range: bytes */<total>`.
 
-`If-Range: "<etag>"` is honored against the object's ETag — if the
-header matches, the Range is served; if it doesn't, the full body is
-served as a 200 instead (so a client resuming an interrupted download
-never merges bytes from a changed object). `If-Range` with a date
-value is treated as a mismatch.
+`If-Range: "<etag>"` is honored against the object's ETag — if the header
+matches, the Range is served; if it doesn't, the full body is served as a `200`
+instead (so a client resuming an interrupted download never merges bytes from a
+changed object). `If-Range` with a date value is treated as a mismatch.
 
-Multi-range requests (`Range: bytes=0-100, 200-300`) are not
-supported; essie3 ignores them and serves the full body.
+> [!NOTE]
+> Multi-range requests (`Range: bytes=0-100, 200-300`) are not supported;
+> essie3 ignores them and serves the full body.
 
 ## Auth (optional)
 
-essie3 is unauthenticated by default. Set `ESSIE3_ACCESS_KEY` to require
-a specific access key on incoming requests — useful for integration
-tests that assert "unauthenticated requests get 403." Only the access
-key is compared; signatures are not verified.
+essie3 is unauthenticated by default. Set `ESSIE3_ACCESS_KEY` to require a
+specific access key on incoming requests — useful for integration tests that
+assert "unauthenticated requests get 403."
+
+> [!NOTE]
+> Only the access key is compared; **signatures are not verified**. This is a
+> test convenience, not real authentication.
 
 ```sh
 ESSIE3_ACCESS_KEY=AKIATEST go run .
@@ -168,8 +211,8 @@ AWS_ACCESS_KEY_ID=AKIATEST AWS_SECRET_ACCESS_KEY=anything \
 aws --endpoint-url http://localhost:9000 s3 ls s3://mybucket
 ```
 
-Objects stored with `x-amz-acl: public-read` are readable without
-credentials even when auth is enabled. Set the ACL on upload:
+Objects stored with `x-amz-acl: public-read` are readable without credentials
+even when auth is enabled. Set the ACL on upload:
 
 ```sh
 # AWS CLI
@@ -183,16 +226,17 @@ curl -X PUT --data-binary @photo.jpg \
   http://localhost:9000/mybucket/photos/photo.jpg
 ```
 
-When debugging an auth failure, set `ESSIE3_DEBUG=true` to print the
-full `Authorization` header and the chosen response status to stderr.
+> [!TIP]
+> When debugging an auth failure, set `ESSIE3_DEBUG=true` to print the full
+> `Authorization` header and the chosen response status to stderr.
 
 ## Fallback placeholders
 
 Put any number of images, PDFs, or videos in the fallback directory. On
-GET/HEAD for a missing object, essie3 picks one deterministically based
-on the key (same key → same placeholder) and serves it with HTTP 200.
+GET/HEAD for a missing object, essie3 picks one deterministically based on the
+key (same key → same placeholder) and serves it with HTTP `200`.
 
-```
+```text
 fallback-data/
 ├── generic1.jpg
 ├── generic2.jpg
@@ -201,49 +245,73 @@ fallback-data/
 └── generic.mp4
 ```
 
-If a key's extension has no matching placeholders, essie3 returns the
-usual `NoSuchKey` error.
+`ESSIE3_FALLBACK_MODE` controls how a miss is filled:
+
+| Mode          | Behavior                                                                  |
+| ------------- | ------------------------------------------------------------------------- |
+| `prefer-pool` | **Default** — curated pool first; generate an identicon if no pool match. |
+| `pool`        | Only curated files from the fallback dir; no generation.                  |
+| `generate`    | Only generated images. PNG and JPEG only; other extensions → `NoSuchKey`. |
+
+Under `pool`, if a key's extension has no matching placeholder, essie3 returns
+the usual `NoSuchKey` error.
 
 ### Generated placeholders
 
-The default mode, `prefer-pool`, enables an on-demand generator that
-renders a **bubble identicon** seeded by `MD5(key)` whenever the curated
-pool has no match: 16 translucent overlapping circles on a white canvas,
-512×512, with colors from the D3 `category20` palette. The same key
-always produces byte-identical output, and successive requests carry the
-same `ETag` so HTTP caching works. Set `ESSIE3_FALLBACK_MODE=pool` to
-disable the generator and serve only curated placeholders.
+When the curated pool has no match (or under `generate`), essie3 renders a
+**bubble identicon** seeded by `MD5(key)`: 16 translucent overlapping circles
+on a white 512×512 canvas, colored from the D3 `category20` palette. The same
+key always produces byte-identical output.
 
-| Mode          | Behavior                                                              |
-| ------------- | --------------------------------------------------------------------- |
-| `prefer-pool` | Default — pool first; generate as a fallback when the pool has no match. |
-| `pool`        | Only files from the fallback dir.                                     |
-| `generate`    | Only generated images. PNG and JPEG only; other extensions → `NoSuchKey`. |
+<p align="center">
+  <img src=".github/assets/identicon-example.png" alt="Example generated bubble identicon" width="320">
+</p>
 
-Generated responses include `ETag: "<md5 hex>"` (S3 single-PUT
-convention) and `Last-Modified` set to the server's start time, so
-`If-None-Match` and `If-Range` work naturally.
+Generated responses include `ETag: "<md5 hex>"` (S3 single-PUT convention) and
+a `Last-Modified` set to the server's start time, so `If-None-Match` and
+`If-Range` work naturally. Set `ESSIE3_FALLBACK_MODE=pool` to disable the
+generator entirely.
+
+### Content disposition
+
+`ESSIE3_FALLBACK_INLINE_EXTENSIONS` is a comma-separated list of extensions
+served with `Content-Disposition: inline`; everything else is served as
+`attachment` (so browsers prompt a download). Set it to an empty string to
+serve **all** fallbacks as attachments.
+
+```sh
+ESSIE3_FALLBACK_INLINE_EXTENSIONS=.jpg,.png,.pdf go run .
+```
+
+The default inline set is:
+
+```text
+.jpg  .jpeg  .png  .gif  .webp  .pdf  .mp4  .mov  .webm  .avi
+```
 
 ## Storage layout
 
-```
+```text
 data/
 └── <bucket>/
-    └── <key>              # raw body
+    ├── <key>              # raw body
     └── <key>.meta.json    # content-type, etag, created-at, acl, ...
 ```
 
-Metadata is written atomically alongside the body. PUT and DELETE on
-the same key are serialized via an in-process per-key lock so
-concurrent writers cannot leave a body/meta mismatch. essie3 does not
-coordinate across multiple processes sharing the same `DATA_DIR`.
+Metadata is written atomically alongside the body. PUT and DELETE on the same
+key are serialized via an in-process per-key lock so concurrent writers cannot
+leave a body/meta mismatch.
+
+> [!NOTE]
+> essie3 does not coordinate across multiple processes sharing the same
+> `DATA_DIR`.
 
 ## Development
 
 ```sh
-go test ./...
+go test ./...     # full test suite
 go vet ./...
-gofmt -l .
+gofmt -l .        # lists files needing formatting
 ```
 
 ## License
