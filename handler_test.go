@@ -929,3 +929,84 @@ func TestHandler_PreferPool_GenerateWhenPoolMisses(t *testing.T) {
 		t.Errorf("generated response missing ETag")
 	}
 }
+
+func TestHandler_FallbackHeader_PoolMode(t *testing.T) {
+	srv := testServer(t) // pool mode
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/bucket/missing/photo.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("X-Essie3-Fallback"); got != "pool" {
+		t.Errorf("X-Essie3-Fallback = %q, want pool", got)
+	}
+	if exp := resp.Header.Get("Access-Control-Expose-Headers"); !strings.Contains(exp, "X-Essie3-Fallback") {
+		t.Errorf("Expose-Headers = %q, want it to include X-Essie3-Fallback", exp)
+	}
+}
+
+func TestHandler_FallbackHeader_GenerateMode(t *testing.T) {
+	srv := testServerWithFallback(t, "testdata/fallback", FallbackModeGenerate)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/bucket/missing/photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("X-Essie3-Fallback"); got != "generate" {
+		t.Errorf("X-Essie3-Fallback = %q, want generate", got)
+	}
+}
+
+func TestHandler_FallbackHeader_HeadPresent(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("HEAD", srv.URL+"/bucket/missing/photo.jpg", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("X-Essie3-Fallback"); got != "pool" {
+		t.Errorf("HEAD X-Essie3-Fallback = %q, want pool", got)
+	}
+}
+
+func TestHandler_FallbackHeader_AbsentOnRealAndMiss(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	// PUT a real object, then GET it: header must be absent.
+	req, _ := http.NewRequest("PUT", srv.URL+"/bucket/real.dat", strings.NewReader("data"))
+	if _, err := http.DefaultClient.Do(req); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(srv.URL + "/bucket/real.dat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("X-Essie3-Fallback"); got != "" {
+		t.Errorf("real object X-Essie3-Fallback = %q, want empty", got)
+	}
+
+	// A miss with no pool match (unknown extension) → NoSuchKey, no header.
+	resp2, err := http.Get(srv.URL + "/bucket/missing/file.xyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 404 {
+		t.Fatalf("expected 404 for unmatched miss, got %d", resp2.StatusCode)
+	}
+	if got := resp2.Header.Get("X-Essie3-Fallback"); got != "" {
+		t.Errorf("miss X-Essie3-Fallback = %q, want empty", got)
+	}
+}
