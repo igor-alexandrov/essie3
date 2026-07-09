@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>essie3 admin</title>
+<link rel="stylesheet" href="/assets/pico.classless.min.css">
+</head>
+<body>
+<header>
+<hgroup>
+<h1>essie3</h1>
+<p>admin dashboard &middot; read-only</p>
+</hgroup>
+</header>
+
+<main>
+{{template "content" .}}
+
+<section>
+<h2>Live traffic</h2>
+<table>
+<thead>
+<tr><th>Time</th><th>Method</th><th>Bucket / key</th><th>Status</th><th>Outcome</th></tr>
+</thead>
+<tbody id="feed"></tbody>
+</table>
+</section>
+</main>
+
+<script>
+(function () {
+  const feed = document.getElementById("feed");
+  let timer = null;
+
+  function refresh() {
+    fetch("/fragment")
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html !== null) document.getElementById("content").innerHTML = html;
+      })
+      .catch(function () {});
+  }
+
+  const es = new EventSource("/events");
+  es.onmessage = function (ev) {
+    let e;
+    try { e = JSON.parse(ev.data); } catch (_) { return; }
+
+    const tr = document.createElement("tr");
+    const when = e.time ? new Date(e.time).toLocaleTimeString() : "";
+    const path = e.bucket ? (e.key ? e.bucket + "/" + e.key : e.bucket) : "";
+    [when, e.method, path, e.status, e.outcome].forEach(function (v) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    feed.insertBefore(tr, feed.firstChild);
+    while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
+
+    if (e.outcome === "write" || e.outcome === "delete") {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 750);
+    }
+  };
+})();
+</script>
+</body>
+</html>
+
+{{define "content"}}
+<section id="content">
+<h2>Overview</h2>
+<table>
+<thead>
+<tr><th>Uptime</th><th>Buckets</th><th>Objects</th><th>Total size</th><th>Fallback hit rate</th></tr>
+</thead>
+<tbody>
+<tr>
+<td>{{.Uptime}}</td>
+<td>{{.BucketCount}}</td>
+<td>{{.ObjectCount}}</td>
+<td>{{.TotalBytes}}</td>
+<td>{{.HitRate}}</td>
+</tr>
+</tbody>
+</table>
+
+<h2>Buckets</h2>
+{{if .Buckets}}
+{{range .Buckets}}
+<details>
+<summary>{{.Name}} &middot; {{.ObjectCount}} objects &middot; {{.TotalBytes}}</summary>
+{{if .Objects}}
+<table>
+<thead>
+<tr><th>Key</th><th>Size</th><th>Content-Type</th><th>ACL</th><th>Created</th></tr>
+</thead>
+<tbody>
+{{range .Objects}}
+<tr>
+<td>{{.Key}}</td>
+<td>{{.Size}}</td>
+<td>{{.ContentType}}</td>
+<td>{{.ACL}}</td>
+<td>{{.Created}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p>No objects.</p>
+{{end}}
+</details>
+{{end}}
+{{else}}
+<p>No buckets yet.</p>
+{{end}}
+</section>
+{{end}}
