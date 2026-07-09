@@ -47,6 +47,7 @@ That's it. Point any S3 client at `http://localhost:9000` and go.
 - [Range requests](#range-requests)
 - [Auth (optional)](#auth-optional)
 - [Fallback placeholders](#fallback-placeholders)
+- [Admin dashboard](#admin-dashboard)
 - [Storage layout](#storage-layout)
 - [Development](#development)
 - [License](#license)
@@ -119,6 +120,7 @@ have dedicated sections below with the full details.
 | `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, requires this access key on requests. See [Auth](#auth-optional). |
 | `ESSIE3_FALLBACK_PUBLIC`            | `false`           | When auth is on, `true` serves fallbacks anonymously. See [Auth](#auth-optional). |
 | `ESSIE3_DEBUG`                      | *(unset)*         | When `true`, logs full request/response details to stderr.                  |
+| `ESSIE3_ADMIN_PORT`                 | *(unset)*         | When set, serves the read-only admin dashboard on `127.0.0.1:<port>`. See [Admin dashboard](#admin-dashboard). |
 
 ## Usage
 
@@ -289,6 +291,33 @@ The default inline set is:
 .jpg  .jpeg  .png  .gif  .webp  .pdf  .mp4  .mov  .webm  .avi
 ```
 
+## Admin dashboard
+
+Set `ESSIE3_ADMIN_PORT` to serve a small **read-only** web dashboard for
+inspecting a running server:
+
+```sh
+ESSIE3_ADMIN_PORT=9001 go run .
+# open http://127.0.0.1:9001
+```
+
+It is a single page with three regions:
+
+- **Overview** — uptime, bucket count, total objects, total size on disk,
+  and the fallback hit rate.
+- **Buckets** — every bucket; expand one to see its objects (key, size,
+  content-type, ACL, created-at).
+- **Live traffic** — every request streamed in as it happens (method,
+  bucket/key, status, and outcome: `real`, `fallback`, `miss`, `denied`,
+  `write`, or `delete`), over Server-Sent Events. Writes and deletes also
+  soft-refresh the bucket listing, so new objects appear without a reload.
+
+The dashboard is **observational only** — no upload, delete, or
+configuration. It is served on a **separate loopback port** (`127.0.0.1`
+only) so it never collides with the S3 API and is not exposed off the
+host; it has no authentication of its own. Leave `ESSIE3_ADMIN_PORT`
+unset to disable it entirely (the default).
+
 ## Storage layout
 
 ```text
@@ -317,3 +346,7 @@ gofmt -l .        # lists files needing formatting
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The admin dashboard bundles [Pico.css](https://picocss.com) (classless
+build, v2.0.6), vendored as `pico.classless.min.css` and also licensed
+under MIT.
