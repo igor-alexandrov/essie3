@@ -230,11 +230,13 @@ var adminCSS []byte // served at GET /assets/pico.classless.min.css
 ```
 
 `go:embed` resolves at compile time, so these assets must be present in
-the build context. They live at repo root and are **not** matched by
-`.dockerignore` (which excludes `testdata/`, `fallback-images/`, etc.),
-so `go build` in the Dockerfile picks them up — but this is a
-standing constraint: never add `*.tmpl`/`*.css` to `.dockerignore`, or
-the container build breaks with an embed error.
+the build context. Two standing constraints follow: (1) the `Dockerfile`
+uses a **selective** `COPY *.go ./`, so it must also
+`COPY admin.html.tmpl pico.classless.min.css ./` before `go build` —
+otherwise the container build fails with `pattern admin.html.tmpl: no
+matching files found`; and (2) never add `*.tmpl`/`*.css` to
+`.dockerignore`. Both are verified by a `docker build` in the final
+plan task.
 
 ```go
 package main
@@ -526,6 +528,9 @@ buckets that exist).
   fallback GET/HEAD, absent on real-object and NoSuchKey responses.
 - **Modify** `README.md` — an "Admin dashboard" subsection documenting
   `ESSIE3_ADMIN_PORT` and the single-page dashboard.
+- **Modify** `Dockerfile` — `COPY` the embedded assets
+  (`admin.html.tmpl`, `pico.classless.min.css`) before `go build`, since
+  it copies sources selectively rather than the whole tree.
 - **Modify** `debug_test.go` — update the type name if it references
   `debugResponseWriter` directly.
 
