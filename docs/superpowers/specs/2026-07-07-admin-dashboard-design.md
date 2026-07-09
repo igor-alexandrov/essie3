@@ -14,6 +14,15 @@ bucket name, no auth entanglement). It is strictly observational:
 every route is `GET`, nothing mutates state. Upload, delete, and
 runtime configuration are explicit **non-goals** (see Out of scope).
 
+It is a **single page**: stats, the live traffic feed, and the
+bucket/object listing all live on `/`. There are no sub-pages to
+navigate — each bucket's objects sit in a native `<details>` disclosure
+on the same page, so "expand a bucket" needs no route and no JS. The
+page is **live**: the traffic feed streams via SSE, and whenever a
+write/delete event arrives on that same stream the stats + listing
+region soft-refreshes (a debounced re-fetch of an HTML fragment), so a
+newly PUT object appears without a manual reload.
+
 Like the rest of essie3 the *code* is pure stdlib — `net/http`,
 `html/template`, `embed`, and Server-Sent Events via `http.Flusher`.
 Styling comes from a **single vendored classless CSS framework** —
@@ -37,16 +46,31 @@ only page JS is one `EventSource` call for the live feed.
   disabled (zero behavior change for existing users). Set to a port
   number → a second `http.Server` starts, bound to **loopback only**
   (`127.0.0.1:<port>`), because the admin surface has no auth.
-- Three views, all `GET`, all server-rendered:
-  - **Dashboard** (`/`) — stats rollup + a live traffic feed that
-    streams new requests as they arrive.
-  - **Buckets** (`/buckets`) — every bucket with object count and
-    total size.
-  - **Bucket detail** (`/buckets/{name}`) — every object in the
-    bucket with key, size, content-type, ACL, and created-at.
-- One data endpoint: **`/events`** — an SSE stream. On connect it
-  replays the in-memory ring buffer (recent history) then pushes each
-  new request live.
+- A **single page** (`GET /`), server-rendered, containing three
+  regions:
+  - **Stats strip** — bucket count, total objects, total bytes,
+    fallback hit rate, uptime.
+  - **Live traffic feed** — a table that streams new requests as they
+    arrive.
+  - **Buckets + objects** — every bucket with object count and total
+    size; each bucket is a `<details>` disclosure whose body is that
+    bucket's object table (key, size, content-type, ACL, created-at),
+    rendered inline.
+- Two data endpoints:
+  - **`/events`** — an SSE stream. On connect it replays the in-memory
+    ring buffer (recent history) then pushes each new request live.
+  - **`/fragment`** — returns just the stats-strip + buckets-region
+    HTML (no page chrome). The page re-fetches this on a debounced
+    trigger to soft-refresh the listing; it is the same markup the
+    full page renders inline, produced by a shared template block.
+- **Soft auto-refresh.** One `EventSource('/events')` drives both the
+  feed (append a row per event) and the listing: when an event's
+  outcome is `write` or `delete` the client schedules a debounced
+  (~750 ms) `fetch('/fragment')` and swaps the returned HTML into the
+  stats+buckets region. Reads don't trigger a refresh (they don't
+  change the filesystem). A periodic timer is **not** needed — writes
+  are the only thing that changes the listing, and they all pass
+  through the feed.
 - Live traffic is captured by a middleware wrapping the S3 handler,
   structurally identical to `WithDebugLogging`: it records one
   `TrafficEvent` per request into an in-process broker. Each request's
@@ -55,9 +79,10 @@ only page JS is one `EventSource` call for the live feed.
   `X-Essie3-Fallback` header the handler sets on fallback responses.
 - Stats: per-bucket object count and total bytes (from a filesystem
   walk), fallback hit rate (from broker counters), and process uptime.
-- The dashboard reflects the live filesystem: buckets/objects written
-  by S3 clients appear on the next page load. No caching, no index —
-  each page load walks `data/`. Fine for a dev-scale server.
+- The dashboard reflects the live filesystem: each render of `/` or
+  `/fragment` walks `data/` fresh (no caching, no index). At dev scale
+  a walk per write-triggered refresh is cheap; the ~750 ms debounce
+  coalesces write bursts into a single walk.
 
 ## Non-goals for v1
 
@@ -188,16 +213,17 @@ outcome, so there's a single source of truth.
 
 ### New file: `admin.go`
 
-The admin `http.Handler` (a `*http.ServeMux`), the three page
-handlers, the SSE handler, and the embedded templates + stylesheet.
+The admin `http.Handler` (a `*http.ServeMux`), the single-page handler,
+the fragment handler, the SSE handler, and the embedded template +
+stylesheet.
 
 Static assets are embedded at the repo root so the layout stays flat
 (no `templates/` package subdir with `.go` files — the embed targets
 are plain assets):
 
 ```go
-//go:embed admin_dashboard.html.tmpl admin_buckets.html.tmpl admin_bucket.html.tmpl
-var adminTemplates embed.FS
+//go:embed admin.html.tmpl
+var adminTemplate string // one file; base page + reusable "content" block
 
 //go:embed pico.classless.min.css
 var adminCSS []byte // served at GET /assets/pico.classless.min.css
@@ -225,16 +251,15 @@ type AdminServer struct {
     fallback  *Fallback
     broker    *TrafficBroker
     startedAt time.Time
-    tmpl      *template.Template // dashboard, buckets, bucket-detail
+    tmpl      *template.Template // parsed adminTemplate: page + "content"
 }
 
-// NewAdminServer parses templates once and returns a ready handler.
+// NewAdminServer parses the template once and returns a ready handler.
 func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time) *AdminServer
 
 // Handler wires the routes onto a ServeMux:
-//   GET /                        -> dashboard (stats + live feed shell)
-//   GET /buckets                 -> bucket list
-//   GET /buckets/{name}          -> object list for one bucket
+//   GET /                        -> single page (stats + feed + buckets)
+//   GET /fragment                -> just the stats+buckets "content" block
 //   GET /events                  -> SSE stream (backlog + live)
 //   GET /assets/pico.classless.min.css   -> embedded stylesheet (long cache)
 //   GET /healthz                 -> 200 "ok" (liveness, plain text)
@@ -242,15 +267,19 @@ func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.T
 func (a *AdminServer) Handler() http.Handler
 ```
 
-Templates are `html/template` (not `text/template`) so bucket/key
+The template is `html/template` (not `text/template`) so bucket/key
 names — attacker-influenceable via the S3 API — are HTML-escaped by
-default. They are parsed once from `adminTemplates` in `NewAdminServer`
-and share a base layout that links the vendored stylesheet:
-`<link rel="stylesheet" href="/assets/pico.classless.min.css">`. The three
-page templates carry only semantic markup — the classless framework
-does the styling, so there are no `class` attributes to maintain. The
-CSS route serves `adminCSS` with a far-future `Cache-Control` (the
-asset is immutable per build).
+default. A **single** `admin.html.tmpl` defines the full page (which
+links the vendored stylesheet and holds the inline feed `<script>`) and
+a nested `{{define "content"}}…{{end}}` block for the stats-strip +
+buckets region. `GET /` executes the whole template; `GET /fragment`
+executes only the `content` block — so the initial render and every
+soft-refresh come from the **same markup**, no drift. Both handlers
+compute the same view model (`ListBuckets` + per-bucket `ListObjects`,
+`broker.Stats()` → hit rate, `time.Since(startedAt)` uptime). The
+markup is semantic only — the classless framework styles bare elements,
+so there are no `class` attributes to maintain. The CSS route serves
+`adminCSS` with a far-future `Cache-Control` (immutable per build).
 
 The SSE handler:
 
@@ -293,14 +322,14 @@ a listing must never block or fail the S3 write path. A key whose
 fields left zero rather than dropping the row or erroring the page.
 
 ```go
-// BucketInfo is one row on the buckets page.
+// BucketInfo is one bucket's summary row (the <details> summary).
 type BucketInfo struct {
     Name        string
     ObjectCount int
     TotalBytes  int64
 }
 
-// ObjectInfo is one row on the bucket-detail page.
+// ObjectInfo is one object row inside a bucket's <details> table.
 type ObjectInfo struct {
     Key         string    // forward-slash key, sidecars excluded
     Size        int64     // meta.ContentLength, else on-disk body size
@@ -420,13 +449,28 @@ not offered in v1 — the surface is unauthenticated.
 
 ## Response / view shapes
 
-### Dashboard (`GET /`)
+### Single page (`GET /`)
 
-Server-rendered HTML: a stats strip (uptime, bucket count, total
-objects, total bytes, fallback hit rate) and an initially-empty live
-table. Inline JS opens `new EventSource('/events')`, prepends a row per
-event (`time · method · bucket/key · status · outcome`), and caps the
-DOM at the most recent ~200 rows.
+Server-rendered HTML: `<head>` links the stylesheet; `<body>` holds the
+stats strip and buckets region (the `content` block) followed by an
+initially-empty feed `<table>` and an inline `<script>`. The script:
+
+1. Opens `new EventSource('/events')`.
+2. On each message, prepends a feed row (`time · method · bucket/key ·
+   status · outcome`) and caps the DOM at ~200 rows.
+3. If the event's `outcome` is `write` or `delete`, (re)starts a
+   ~750 ms debounce timer; on fire, `fetch('/fragment')` and replace
+   the content region's `innerHTML` with the response text.
+
+The whole script is a couple dozen lines of vanilla JS — no framework,
+no dependencies.
+
+### Fragment (`GET /fragment`)
+
+The `content` block only — stats strip + buckets `<details>` tables — as
+an HTML fragment with no `<html>`/`<head>` chrome. `Content-Type:
+text/html`. Byte-shape-identical to the same region in `GET /`, since
+both execute the one shared template block.
 
 ### SSE frame (`GET /events`)
 
@@ -436,22 +480,28 @@ data: {"seq":42,"time":"2026-07-07T12:00:00Z","method":"GET","bucket":"assets","
 
 ```
 
-### Bucket detail (`GET /buckets/{name}`)
+### Buckets region (inside `/` and `/fragment`)
 
-A table of `ObjectInfo` rows. Unknown bucket → a 404 HTML page (this is
-the admin UI, not the S3 API, so it does **not** use `writeNoSuchBucket`
-/ the S3 XML error shape — that shape is reserved for S3 clients).
+Per bucket: a `<details>` whose `<summary>` shows the bucket name,
+object count, and total size, and whose body is a `<table>` of
+`ObjectInfo` rows (key, size, content-type, ACL, created-at). A bucket
+with zero objects renders an empty-state line instead of a table. All
+object data is rendered inline at request time — there is no per-bucket
+endpoint and no unknown-bucket 404 to handle (the page only ever lists
+buckets that exist).
 
 ## File changes summary
 
 - **Create** `traffic.go` — `TrafficEvent`, `TrafficBroker` (ring
   buffer, subscribers, counters), `WithTrafficCapture`,
   `splitBucketKey`, `classifyOutcome`.
-- **Create** `admin.go` — `AdminServer`, route mux, three page
-  handlers, SSE handler, `writeSSE`, CSS route, template/asset embeds.
-- **Create** `admin_dashboard.html.tmpl`, `admin_buckets.html.tmpl`,
-  `admin_bucket.html.tmpl` — semantic-HTML templates (no `class`
-  attributes), embedded via `//go:embed`.
+- **Create** `admin.go` — `AdminServer`, route mux, single-page handler,
+  `/fragment` handler, SSE handler, `writeSSE`, CSS route, view-model
+  builder, template/asset embeds.
+- **Create** `admin.html.tmpl` — one semantic-HTML template (no `class`
+  attributes): the full page plus a `{{define "content"}}` block reused
+  by `/fragment`; includes the inline feed + soft-refresh `<script>`.
+  Embedded via `//go:embed`.
 - **Vendor** `pico.classless.min.css` — Pico.css's classless build,
   committed at repo root, embedded and served at
   `/assets/pico.classless.min.css`. Retain its MIT license header
@@ -475,7 +525,7 @@ the admin UI, not the S3 API, so it does **not** use `writeNoSuchBucket`
 - **Modify** `handler_test.go` — assert `X-Essie3-Fallback` present on
   fallback GET/HEAD, absent on real-object and NoSuchKey responses.
 - **Modify** `README.md` — an "Admin dashboard" subsection documenting
-  `ESSIE3_ADMIN_PORT` and the three views.
+  `ESSIE3_ADMIN_PORT` and the single-page dashboard.
 - **Modify** `debug_test.go` — update the type name if it references
   `debugResponseWriter` directly.
 
@@ -515,18 +565,23 @@ the admin UI, not the S3 API, so it does **not** use `writeNoSuchBucket`
 
 ### `admin_test.go` (via `httptest.NewServer(admin.Handler())`)
 
-- `GET /` → 200, `text/html`, contains the stats strip and the
-  `EventSource('/events')` bootstrap.
-- `GET /buckets` → 200, lists seeded bucket names and counts.
-- `GET /buckets/{known}` → 200, lists seeded object keys; HTML-escapes
-  a key containing `<`/`&` (inject a key like `a<b` and assert it is
-  escaped in the body).
-- `GET /buckets/{unknown}` → 404 HTML (not S3 XML).
+- `GET /` → 200, `text/html`, contains the stats strip, the seeded
+  bucket names/counts, the seeded object keys (inside their
+  `<details>`), and the `EventSource('/events')` bootstrap.
+- **Escaping.** A seeded key containing `<`/`&` is HTML-escaped in the
+  `/` body (inject a key like `a<b` and assert it is escaped).
+- `GET /fragment` → 200, `text/html`, contains the stats strip and
+  bucket/object rows but **not** the `<html>`/`<head>` chrome or the
+  feed `<script>` — proving it is the `content` block only.
+- **Fragment ≡ page region.** The bytes of `/fragment` appear verbatim
+  inside the `/` response (same shared block, no drift).
 - `GET /events` with a pre-seeded broker → the response body contains
   the backlog frames (`id:` / `data:` JSON) for the seeded events.
   Drive it with a client that reads a bounded prefix then cancels the
   request context so the streaming handler returns.
-- Non-GET on any admin route → 405.
+- `GET /assets/pico.classless.min.css` → 200, `text/css`, non-empty.
+- Unknown path (e.g. `GET /nope`) → 404. Non-GET on any admin route →
+  405.
 
 ### `handler_test.go` additions
 
