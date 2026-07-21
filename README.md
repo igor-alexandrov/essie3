@@ -302,6 +302,8 @@ ESSIE3_ADMIN_PORT=9001 go run .
 # open http://127.0.0.1:9001
 ```
 
+![essie3 admin dashboard: overview stat blocks, the bucket list, and the live traffic feed](.github/assets/admin-dashboard.png)
+
 The dashboard (`/`) has three sections:
 
 - **Overview** — uptime, bucket count, total objects, total size on disk,
@@ -321,6 +323,11 @@ The dashboard (`/`) has three sections:
   the object on the S3 server (new tab; omitted when auth is on). Writes
   and deletes also soft-refresh the listing, so new objects appear
   without a reload.
+
+Each bucket has its own page listing its objects, with a search box to
+filter keys:
+
+![essie3 admin bucket page: object listing with key/size/type/ACL/created columns and a key filter](.github/assets/admin-bucket.png)
 
 The dashboard is **observational only** — no upload, delete, or
 configuration. It is served on a **separate port** so it never collides
