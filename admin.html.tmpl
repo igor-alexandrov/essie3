@@ -30,21 +30,30 @@ a:hover, summary:hover { color: #1d4ed8; }
 (function () {
   const cfg = window.__essie3 || { bucket: "" };
   const feed = document.getElementById("feed");
-  const fragmentUrl = cfg.bucket
+  const listUrl = cfg.bucket
     ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment"
     : "/fragment";
-  let timer = null;
 
-  function refresh() {
-    fetch(fragmentUrl)
+  // Swap an element's outerHTML with a freshly-fetched fragment.
+  function swap(url, id) {
+    fetch(url)
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
         if (html === null) return;
-        const cur = document.getElementById("content");
+        const cur = document.getElementById(id);
         if (cur) cur.outerHTML = html;
       })
       .catch(function () {});
   }
+
+  // Overview (dashboard only): poll so uptime ticks and read-driven
+  // stats (hit rate) stay current even with no writes.
+  if (document.getElementById("overview")) {
+    setInterval(function () { swap("/overview", "overview"); }, 1000);
+  }
+
+  // Listing refresh: debounced, on a matching write/delete.
+  let listTimer = null;
 
   const es = new EventSource("/events");
   es.onmessage = function (ev) {
@@ -66,8 +75,10 @@ a:hover, summary:hover { color: #1d4ed8; }
 
     if ((e.outcome === "write" || e.outcome === "delete") &&
         (!cfg.bucket || e.bucket === cfg.bucket)) {
-      clearTimeout(timer);
-      timer = setTimeout(refresh, 750);
+      clearTimeout(listTimer);
+      listTimer = setTimeout(function () { swap(listUrl, "content"); }, 750);
+      // Reflect the new counts in the overview immediately, too.
+      if (document.getElementById("overview")) swap("/overview", "overview");
     }
   };
 })();
@@ -85,7 +96,8 @@ a:hover, summary:hover { color: #1d4ed8; }
 <body>
 {{template "topbar" .}}
 <main>
-{{template "dashboard_content" .}}
+{{template "overview" .}}
+{{template "buckets_section" .}}
 {{template "feed" .}}
 </main>
 <script>window.__essie3 = { bucket: "" };</script>
@@ -93,7 +105,7 @@ a:hover, summary:hover { color: #1d4ed8; }
 </body>
 </html>{{end}}
 
-{{define "dashboard_content"}}<section id="content">
+{{define "overview"}}<section id="overview">
 <div class="stats">
 <div class="stat"><span class="num">{{.Uptime}}</span><span class="lbl">Uptime</span></div>
 <div class="stat"><span class="num">{{.BucketCount}}</span><span class="lbl">Buckets</span></div>
@@ -101,7 +113,9 @@ a:hover, summary:hover { color: #1d4ed8; }
 <div class="stat"><span class="num">{{.TotalBytes}}</span><span class="lbl">Total size</span></div>
 <div class="stat"><span class="num">{{.HitRate}}</span><span class="lbl">Fallback hit rate</span></div>
 </div>
+</section>{{end}}
 
+{{define "buckets_section"}}<section id="content">
 <h2>Buckets</h2>
 {{if .Buckets}}
 <table>

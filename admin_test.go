@@ -99,6 +99,29 @@ func TestAdmin_BucketPage_Unknown(t *testing.T) {
 	}
 }
 
+func TestAdmin_Overview(t *testing.T) {
+	srv, _ := testAdminServer(t)
+
+	resp, body := get(t, srv.URL+"/overview")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	for _, want := range []string{`id="overview"`, `class="stat"`, "Fallback hit rate", "Uptime"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("overview body missing %q", want)
+		}
+	}
+	// The overview is its own section: no page chrome and no buckets/feed.
+	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "<h2>Buckets</h2>", "Live traffic"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("overview body should not contain %q", forbidden)
+		}
+	}
+}
+
 func TestAdmin_Fragment(t *testing.T) {
 	srv, _ := testAdminServer(t)
 
@@ -109,13 +132,14 @@ func TestAdmin_Fragment(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
-	for _, want := range []string{"Fallback hit rate", "assets"} {
+	// The dashboard fragment is now the buckets section only.
+	for _, want := range []string{"<h2>Buckets</h2>", "assets", `href="/buckets/assets"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("fragment body missing %q", want)
 		}
 	}
-	// The fragment is the content block only: no page chrome, no feed script.
-	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "Live traffic"} {
+	// No page chrome, no feed script, and not the overview stats.
+	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "Live traffic", "Fallback hit rate"} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("fragment body should not contain %q", forbidden)
 		}

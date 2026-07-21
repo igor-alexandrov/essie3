@@ -50,13 +50,19 @@ only page JS is one `EventSource` call for the live feed.
   disabled (zero behavior change for existing users). Set to a port
   number → a second `http.Server` starts, bound to **loopback only**
   (`127.0.0.1:<port>`), because the admin surface has no auth.
-- A **dashboard page** (`GET /`), server-rendered:
-  - **Stats strip** — bucket count, total objects, total bytes,
-    fallback hit rate, uptime.
-  - **Live traffic feed** — a table that streams new requests as they
-    arrive.
-  - **Buckets** — every bucket with object count and total size; the
-    name links to that bucket's standalone page. No object rows here.
+- A **dashboard page** (`GET /`), server-rendered, three sections:
+  - **Overview** (`<section id="overview">`) — a row of stat blocks
+    (uptime, buckets, objects, total size, fallback hit rate). It is
+    **independently live**: the client polls `/overview` on a 1 s
+    interval (so uptime ticks and read-driven stats like hit rate stay
+    current with no writes) and also refreshes it immediately on a
+    write/delete.
+  - **Buckets** (`<section id="content">`, `<h2>` header) — every
+    bucket with object count and total size; the name links to that
+    bucket's standalone page. No object rows here. Soft-refreshes on
+    write/delete via `/fragment`.
+  - **Live traffic** (`<h2>` header) — a table that streams new
+    requests as they arrive over SSE.
 - A **bucket page** (`GET /buckets/{name}`), server-rendered: the
   bucket's object table (key, size, content-type, ACL, created-at), a
   back link to the dashboard, and the shared "Live" header. An unknown
@@ -64,8 +70,10 @@ only page JS is one `EventSource` call for the live feed.
 - Data / fragment endpoints:
   - **`/events`** — an SSE stream. On connect it replays the in-memory
     ring buffer (recent history) then pushes each new request live.
-  - **`/fragment`** — the dashboard's stats + bucket-list region as an
-    HTML fragment (no page chrome), for soft-refresh.
+  - **`/overview`** — the dashboard's Overview section as an HTML
+    fragment, polled every 1 s so uptime and stats stay live.
+  - **`/fragment`** — the dashboard's Buckets section as an HTML
+    fragment (no page chrome), for soft-refresh on write/delete.
   - **`/buckets/{name}/fragment`** — one bucket's object-table region
     as an HTML fragment, for that bucket page's soft-refresh.
 - **Soft auto-refresh.** Each page opens one `EventSource('/events')`.

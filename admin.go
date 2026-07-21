@@ -45,6 +45,7 @@ func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.T
 func (a *AdminServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.handleIndex)
+	mux.HandleFunc("GET /overview", a.handleOverview)
 	mux.HandleFunc("GET /fragment", a.handleFragment)
 	mux.HandleFunc("GET /buckets/{name}", a.handleBucket)
 	mux.HandleFunc("GET /buckets/{name}/fragment", a.handleBucketFragment)
@@ -150,8 +151,12 @@ func (a *AdminServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "dashboard", a.dashboard())
 }
 
+func (a *AdminServer) handleOverview(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "overview", a.dashboard())
+}
+
 func (a *AdminServer) handleFragment(w http.ResponseWriter, r *http.Request) {
-	a.render(w, "dashboard_content", a.dashboard())
+	a.render(w, "buckets_section", a.dashboard())
 }
 
 func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
