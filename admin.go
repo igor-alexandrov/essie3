@@ -70,6 +70,7 @@ type dashboardView struct {
 	StartedMs   int64  // process start, Unix ms — the JS uptime clock's origin
 	S3Port      string // for building live-feed object links client-side
 	AuthEnabled bool   // gates feed links (only link when a browser could fetch)
+	FeedLimit   int    // max rows the live feed keeps (matches the ring size)
 	BucketCount int
 	ObjectCount int
 	TotalBytes  string
@@ -126,6 +127,7 @@ func (a *AdminServer) dashboard() dashboardView {
 		StartedMs:   a.startedAt.UnixMilli(),
 		S3Port:      a.s3Port,
 		AuthEnabled: a.authEnabled,
+		FeedLimit:   a.broker.Cap(),
 		BucketCount: len(buckets),
 		ObjectCount: totalObjects,
 		TotalBytes:  humanBytes(totalBytes),

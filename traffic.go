@@ -119,6 +119,11 @@ func (b *TrafficBroker) Stats() (reads, fallbacks uint64) {
 	return b.reads, b.fallbacks
 }
 
+// Cap is the ring capacity — the number of recent requests retained for
+// backlog replay, and the length the live feed shows. Set at
+// construction, so no lock is needed.
+func (b *TrafficBroker) Cap() int { return b.cap }
+
 // WithTrafficCapture wraps next so every request is published to the
 // broker after it completes. Independent of WithDebugLogging; both may
 // wrap the same handler in either order.

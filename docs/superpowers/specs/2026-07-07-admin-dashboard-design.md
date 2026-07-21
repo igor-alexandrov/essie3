@@ -424,7 +424,7 @@ startedAt := time.Now()
 
 var broker *TrafficBroker
 if adminPort := os.Getenv("ESSIE3_ADMIN_PORT"); adminPort != "" {
-    broker = NewTrafficBroker(trafficRingSize) // const, 500
+    broker = NewTrafficBroker(trafficRingSize) // const, 200
     // WithTrafficCapture wraps the base S3 handler; debug logging (if
     // enabled) wraps the result, or vice versa — order is immaterial.
     handler = WithTrafficCapture(handler, broker)
@@ -653,8 +653,11 @@ mechanical and covered by `debug_test.go`.
 - **Persisting traffic across restarts** — the ring buffer is
   in-memory and volatile. No on-disk event log.
 - **Configurable ring size / poll interval via env** — `trafficRingSize`
-  is a constant (500) for v1; promote to an env var only if a need
-  surfaces, matching how the generated-fallback constants are handled.
+  is a constant (200) for v1: it sizes the broker ring *and*, passed to
+  the page as `feedLimit`, caps the live feed's DOM rows, so the retained
+  backlog and the visible feed are the same length. Promote to an env var
+  only if a need surfaces, matching how the generated-fallback constants
+  are handled.
 - **Pagination / search on the object list** — a flat sorted table is
   fine at dev scale; revisit if buckets routinely hold thousands of
   keys.

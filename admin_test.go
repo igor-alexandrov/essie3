@@ -58,8 +58,8 @@ func TestAdmin_Index(t *testing.T) {
 			t.Errorf("index body missing %q", want)
 		}
 	}
-	// Feed-link config is wired into the page (S3 port + auth state).
-	for _, want := range []string{"s3Port", `"9000"`, "authEnabled"} {
+	// Feed config is wired into the page (S3 port, auth state, row cap).
+	for _, want := range []string{"s3Port", `"9000"`, "authEnabled", "feedLimit"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index config missing %q", want)
 		}

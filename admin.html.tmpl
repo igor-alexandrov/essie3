@@ -117,7 +117,8 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
       appendCell(tr, e.status);
       appendCell(tr, e.outcome);
       feed.insertBefore(tr, feed.firstChild);
-      while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
+      const limit = cfg.feedLimit || 200;
+      while (feed.childElementCount > limit) feed.removeChild(feed.lastChild);
     }
 
     // Server-derived stats (counts, hit rate) change on any request;
@@ -153,7 +154,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{template "buckets_section" .}}
 {{template "feed" .}}
 </main>
-<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}}, s3Port: "{{.S3Port}}", authEnabled: {{.AuthEnabled}} };</script>
+<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}}, s3Port: "{{.S3Port}}", authEnabled: {{.AuthEnabled}}, feedLimit: {{.FeedLimit}} };</script>
 {{template "script"}}
 </body>
 </html>{{end}}

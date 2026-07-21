@@ -15,8 +15,9 @@ import (
 )
 
 // trafficRingSize is how many recent requests the admin dashboard's
-// in-memory traffic buffer retains for backlog replay.
-const trafficRingSize = 500
+// live feed retains and shows: it sizes the in-memory ring buffer (the
+// SSE backlog) and, passed through to the page, caps the feed's rows.
+const trafficRingSize = 200
 
 func main() {
 	startedAt := time.Now()
