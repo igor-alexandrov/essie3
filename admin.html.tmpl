@@ -34,26 +34,37 @@ a:hover, summary:hover { color: #1d4ed8; }
     ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment"
     : "/fragment";
 
-  // Swap an element's outerHTML with a freshly-fetched fragment.
-  function swap(url, id) {
+  // Uptime is a pure client-side clock — no network, no polling.
+  function fmtUptime(sec) {
+    sec = Math.floor(sec);
+    const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600),
+          m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    if (d) return d + "d " + h + "h";
+    if (h) return h + "h " + m + "m";
+    if (m) return m + "m " + s + "s";
+    return s + "s";
+  }
+  const uptimeEl = document.getElementById("uptime");
+  if (uptimeEl && cfg.startedMs) {
+    const tick = function () { uptimeEl.textContent = fmtUptime((Date.now() - cfg.startedMs) / 1000); };
+    tick();
+    setInterval(tick, 1000);
+  }
+
+  function fetchInto(url, id, mode) {
     fetch(url)
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
         if (html === null) return;
-        const cur = document.getElementById(id);
-        if (cur) cur.outerHTML = html;
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (mode === "inner") el.innerHTML = html; else el.outerHTML = html;
       })
       .catch(function () {});
   }
 
-  // Overview (dashboard only): poll so uptime ticks and read-driven
-  // stats (hit rate) stay current even with no writes.
-  if (document.getElementById("overview")) {
-    setInterval(function () { swap("/overview", "overview"); }, 1000);
-  }
-
-  // Listing refresh: debounced, on a matching write/delete.
-  let listTimer = null;
+  const hasStats = !!document.getElementById("serverstats");
+  let listTimer = null, statsTimer = null;
 
   const es = new EventSource("/events");
   es.onmessage = function (ev) {
@@ -73,12 +84,18 @@ a:hover, summary:hover { color: #1d4ed8; }
       while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
     }
 
+    // Server-derived stats (counts, hit rate) change on any request;
+    // refresh them event-driven and debounced — never on an idle timer.
+    if (hasStats) {
+      clearTimeout(statsTimer);
+      statsTimer = setTimeout(function () { fetchInto("/overview", "serverstats", "inner"); }, 500);
+    }
+
+    // The listing changes only on a matching write/delete.
     if ((e.outcome === "write" || e.outcome === "delete") &&
         (!cfg.bucket || e.bucket === cfg.bucket)) {
       clearTimeout(listTimer);
-      listTimer = setTimeout(function () { swap(listUrl, "content"); }, 750);
-      // Reflect the new counts in the overview immediately, too.
-      if (document.getElementById("overview")) swap("/overview", "overview");
+      listTimer = setTimeout(function () { fetchInto(listUrl, "content", "outer"); }, 750);
     }
   };
 })();
@@ -100,20 +117,22 @@ a:hover, summary:hover { color: #1d4ed8; }
 {{template "buckets_section" .}}
 {{template "feed" .}}
 </main>
-<script>window.__essie3 = { bucket: "" };</script>
+<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}} };</script>
 {{template "script"}}
 </body>
 </html>{{end}}
 
 {{define "overview"}}<section id="overview">
 <div class="stats">
-<div class="stat"><span class="num">{{.Uptime}}</span><span class="lbl">Uptime</span></div>
-<div class="stat"><span class="num">{{.BucketCount}}</span><span class="lbl">Buckets</span></div>
-<div class="stat"><span class="num">{{.ObjectCount}}</span><span class="lbl">Objects</span></div>
-<div class="stat"><span class="num">{{.TotalBytes}}</span><span class="lbl">Total size</span></div>
-<div class="stat"><span class="num">{{.HitRate}}</span><span class="lbl">Fallback hit rate</span></div>
+<div class="stat"><span class="num" id="uptime">{{.Uptime}}</span><span class="lbl">Uptime</span></div>
+<div id="serverstats" style="display:contents">{{template "overview_stats" .}}</div>
 </div>
 </section>{{end}}
+
+{{define "overview_stats"}}<div class="stat"><span class="num">{{.BucketCount}}</span><span class="lbl">Buckets</span></div>
+<div class="stat"><span class="num">{{.ObjectCount}}</span><span class="lbl">Objects</span></div>
+<div class="stat"><span class="num">{{.TotalBytes}}</span><span class="lbl">Total size</span></div>
+<div class="stat"><span class="num">{{.HitRate}}</span><span class="lbl">Fallback hit rate</span></div>{{end}}
 
 {{define "buckets_section"}}<section id="content">
 <h2>Buckets</h2>

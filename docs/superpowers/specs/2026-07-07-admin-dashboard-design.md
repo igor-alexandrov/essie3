@@ -53,10 +53,12 @@ only page JS is one `EventSource` call for the live feed.
 - A **dashboard page** (`GET /`), server-rendered, three sections:
   - **Overview** (`<section id="overview">`) — a row of stat blocks
     (uptime, buckets, objects, total size, fallback hit rate). It is
-    **independently live**: the client polls `/overview` on a 1 s
-    interval (so uptime ticks and read-driven stats like hit rate stay
-    current with no writes) and also refreshes it immediately on a
-    write/delete.
+    **live without polling**: **uptime is a pure client-side clock**
+    (JS ticks it each second from the process start time embedded as
+    `startedMs`, no network), and the four server-derived stats
+    (`#serverstats`) refresh **event-driven** — a debounced
+    `fetch('/overview')` on each SSE event — so they stay current on
+    reads and writes but issue no requests while idle.
   - **Buckets** (`<section id="content">`, `<h2>` header) — every
     bucket with object count and total size; the name links to that
     bucket's standalone page. No object rows here. Soft-refreshes on
@@ -70,8 +72,10 @@ only page JS is one `EventSource` call for the live feed.
 - Data / fragment endpoints:
   - **`/events`** — an SSE stream. On connect it replays the in-memory
     ring buffer (recent history) then pushes each new request live.
-  - **`/overview`** — the dashboard's Overview section as an HTML
-    fragment, polled every 1 s so uptime and stats stay live.
+  - **`/overview`** — the dashboard's server-derived stat blocks
+    (buckets, objects, total size, hit rate) as an HTML fragment,
+    fetched event-driven on SSE activity (not on a timer). Uptime is
+    not in this fragment — it's a client-side clock.
   - **`/fragment`** — the dashboard's Buckets section as an HTML
     fragment (no page chrome), for soft-refresh on write/delete.
   - **`/buckets/{name}/fragment`** — one bucket's object-table region

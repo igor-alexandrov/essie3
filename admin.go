@@ -59,6 +59,7 @@ func (a *AdminServer) Handler() http.Handler {
 
 type dashboardView struct {
 	Uptime      string
+	StartedMs   int64 // process start, Unix ms — the JS uptime clock's origin
 	BucketCount int
 	ObjectCount int
 	TotalBytes  string
@@ -110,6 +111,7 @@ func (a *AdminServer) dashboard() dashboardView {
 
 	return dashboardView{
 		Uptime:      formatUptime(time.Since(a.startedAt)),
+		StartedMs:   a.startedAt.UnixMilli(),
 		BucketCount: len(buckets),
 		ObjectCount: totalObjects,
 		TotalBytes:  humanBytes(totalBytes),
@@ -152,7 +154,8 @@ func (a *AdminServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminServer) handleOverview(w http.ResponseWriter, r *http.Request) {
-	a.render(w, "overview", a.dashboard())
+	// Only the server-derived stat blocks — uptime is a client-side clock.
+	a.render(w, "overview_stats", a.dashboard())
 }
 
 func (a *AdminServer) handleFragment(w http.ResponseWriter, r *http.Request) {

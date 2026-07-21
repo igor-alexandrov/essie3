@@ -109,13 +109,14 @@ func TestAdmin_Overview(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
-	for _, want := range []string{`id="overview"`, `class="stat"`, "Fallback hit rate", "Uptime"} {
+	// /overview returns only the server-derived stat blocks (uptime is a
+	// client-side clock, so it is not in this fragment).
+	for _, want := range []string{`class="stat"`, "Fallback hit rate", "Buckets", "Objects"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("overview body missing %q", want)
 		}
 	}
-	// The overview is its own section: no page chrome and no buckets/feed.
-	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "<h2>Buckets</h2>", "Live traffic"} {
+	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "<h2>Buckets</h2>", "Live traffic", "Uptime"} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("overview body should not contain %q", forbidden)
 		}
