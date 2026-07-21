@@ -5,10 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>essie3 admin</title>
 <link rel="stylesheet" href="/assets/pico.classless.min.css">
+<style>
+.live { font-size: .45em; font-weight: normal; vertical-align: middle; color: #16a34a; letter-spacing: .05em; text-transform: uppercase; }
+.live .dot { display: inline-block; width: .6em; height: .6em; margin-right: .35em; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.7); animation: live-pulse 1.5s ease-out infinite; }
+@keyframes live-pulse { 70% { box-shadow: 0 0 0 .6em rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+@media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
+</style>
 </head>
 <body>
 <header>
-<h1>essie3</h1>
+<h1>essie3 <span class="live" title="Live — traffic and the bucket listing update in real time"><span class="dot"></span>Live</span></h1>
 </header>
 
 <main>
