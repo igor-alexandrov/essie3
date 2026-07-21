@@ -190,7 +190,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 <tbody>
 {{range .Objects}}
 <tr>
-<td><a href="{{.URL}}" target="_blank" rel="noopener">{{.Key}}</a></td>
+<td>{{if .Viewable}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Key}}</a>{{else}}<span title="Not public-read — a browser view would be denied while auth is enabled">{{.Key}}</span>{{end}}</td>
 <td>{{.Size}}</td>
 <td>{{.ContentType}}</td>
 <td>{{.ACL}}</td>

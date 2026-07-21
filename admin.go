@@ -21,25 +21,30 @@ var adminCSS []byte
 // AdminServer serves the read-only dashboard: a single page plus an SSE
 // traffic stream and a soft-refresh HTML fragment.
 type AdminServer struct {
-	storage   *Storage
-	fallback  *Fallback
-	broker    *TrafficBroker
-	startedAt time.Time
-	s3Port    string // ESSIE3_PORT — where object view-links point
-	tmpl      *template.Template
+	storage     *Storage
+	fallback    *Fallback
+	broker      *TrafficBroker
+	startedAt   time.Time
+	s3Port      string // ESSIE3_PORT — where object view-links point
+	authEnabled bool   // when true, only public-read objects are viewable unauthenticated
+	tmpl        *template.Template
 }
 
 // NewAdminServer parses the embedded template once and returns a ready
 // server. s3Port is the S3 API port; object view-links on bucket pages
-// point at http://<admin host>:<s3Port>/<bucket>/<key>.
-func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time, s3Port string) *AdminServer {
+// point at http://<admin host>:<s3Port>/<bucket>/<key>. authEnabled
+// mirrors the S3 server's auth state so links are only rendered for
+// objects a browser could actually fetch (any object when auth is off;
+// only public-read objects when it's on).
+func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time, s3Port string, authEnabled bool) *AdminServer {
 	return &AdminServer{
-		storage:   s,
-		fallback:  fb,
-		broker:    b,
-		startedAt: startedAt,
-		s3Port:    s3Port,
-		tmpl:      template.Must(template.New("admin").Parse(adminTemplate)),
+		storage:     s,
+		fallback:    fb,
+		broker:      b,
+		startedAt:   startedAt,
+		s3Port:      s3Port,
+		authEnabled: authEnabled,
+		tmpl:        template.Must(template.New("admin").Parse(adminTemplate)),
 	}
 }
 
@@ -85,6 +90,7 @@ type bucketView struct {
 type adminObject struct {
 	Key         string
 	URL         string // absolute link to the object on the S3 server
+	Viewable    bool   // whether an unauthenticated browser GET would succeed
 	Size        string
 	ContentType string
 	ACL         string
@@ -139,6 +145,7 @@ func (a *AdminServer) bucketDetail(name, objHost string) (bucketView, error) {
 		rows = append(rows, adminObject{
 			Key:         o.Key,
 			URL:         u.String(),
+			Viewable:    !a.authEnabled || o.ACL == "public-read",
 			Size:        humanBytes(o.Size),
 			ContentType: o.ContentType,
 			ACL:         o.ACL,

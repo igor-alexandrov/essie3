@@ -89,7 +89,7 @@ func main() {
 	// would sever long-lived SSE connections.
 	var adminSrv *http.Server
 	if broker != nil {
-		admin := NewAdminServer(storage, fallback, broker, startedAt, port)
+		admin := NewAdminServer(storage, fallback, broker, startedAt, port, auth.Enabled())
 		adminSrv = &http.Server{
 			Addr:              net.JoinHostPort(adminHost, adminPort),
 			Handler:           admin.Handler(),

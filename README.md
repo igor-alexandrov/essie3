@@ -310,7 +310,9 @@ The dashboard (`/`) has three sections:
 - **Buckets** — every bucket with its object count and size; each name
   links to that bucket's own page listing its objects (key, size,
   content-type, ACL, created-at). Object keys link to the file on the S3
-  server, opened in a new tab.
+  server, opened in a new tab. When auth is enabled, only `public-read`
+  objects are linked (others would be denied to an unauthenticated
+  browser); they show as plain text instead.
 - **Live traffic** — every request streamed in as it happens (method,
   bucket/key, status, and outcome: `real`, `fallback`, `miss`, `denied`,
   `write`, or `delete`), over Server-Sent Events. Writes and deletes also

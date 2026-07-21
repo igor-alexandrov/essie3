@@ -110,7 +110,12 @@ Listed here because the scope was deliberately trimmed:
   only. Each object key on a bucket page links out to the object on the
   S3 server (`http://<admin host>:<ESSIE3_PORT>/<bucket>/<key>`, opened
   in a new tab); the admin port itself does not proxy or download
-  object content.
+  object content. The link is **ACL-aware**: when the S3 server's auth
+  is enabled (`ESSIE3_ACCESS_KEY` set), only `public-read` objects are
+  linked — an unauthenticated browser GET of anything else would 403, so
+  those keys render as plain text with an explanatory tooltip. With auth
+  off, every object is linked. `authEnabled` is passed into
+  `NewAdminServer` from `main`.
 - **No auth on the admin port** — loopback binding is the containment.
 - **No persistence of traffic** — the event ring buffer is in-memory
   and resets on restart.

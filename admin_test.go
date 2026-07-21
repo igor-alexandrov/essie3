@@ -16,7 +16,7 @@ func testAdminServer(t *testing.T) (*httptest.Server, *TrafficBroker) {
 	s.PutObject("assets", "a<b&c.txt", []byte("yy"), &ObjectMeta{ContentType: "text/plain"})
 	b := NewTrafficBroker(50)
 	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePool)
-	admin := NewAdminServer(s, fb, b, time.Now(), "9000")
+	admin := NewAdminServer(s, fb, b, time.Now(), "9000", false)
 	srv := httptest.NewServer(admin.Handler())
 	t.Cleanup(srv.Close)
 	return srv, b
@@ -88,6 +88,29 @@ func TestAdmin_BucketPage(t *testing.T) {
 	}
 	if !strings.Contains(body, "a&lt;b&amp;c.txt") {
 		t.Error("expected HTML-escaped key a&lt;b&amp;c.txt in bucket page")
+	}
+}
+
+func TestAdmin_BucketPage_AuthOnlyLinksPublicRead(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	s.PutObject("b", "pub.txt", []byte("x"), &ObjectMeta{ContentType: "text/plain", ACL: "public-read"})
+	s.PutObject("b", "priv.txt", []byte("x"), &ObjectMeta{ContentType: "text/plain"})
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePool)
+	// Auth enabled: only public-read objects should be linked.
+	admin := NewAdminServer(s, fb, NewTrafficBroker(10), time.Now(), "9000", true)
+	srv := httptest.NewServer(admin.Handler())
+	defer srv.Close()
+
+	_, body := get(t, srv.URL+"/buckets/b")
+
+	if !strings.Contains(body, `pub.txt</a>`) {
+		t.Error("public-read object should be linked under auth")
+	}
+	if strings.Contains(body, `priv.txt</a>`) {
+		t.Error("non-public object must NOT be linked under auth")
+	}
+	if !strings.Contains(body, `priv.txt</span>`) {
+		t.Error("non-public object should render as plain text with a note")
 	}
 }
 
