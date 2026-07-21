@@ -17,7 +17,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 /* Bucket page header: name on the left, compact search on the right. */
 .page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 1rem; }
 .page-head h2 { margin: 0; }
-.bucket-search { margin: 0; }
+.bucket-search { margin: 0; flex: 0 0 auto; }
 .bucket-search input { margin: 0; width: 15rem; max-width: 100%; font-size: .875rem; }
 </style>{{end}}
 
@@ -215,7 +215,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 <p><a href="/">&larr; All buckets</a></p>
 <div class="page-head">
 <h2>{{.Name}}</h2>
-<form role="search" method="get" class="bucket-search">
+<form method="get" class="bucket-search">
 <input type="search" name="q" value="{{.Query}}" placeholder="Filter keys — substring or *.jpg" aria-label="Search keys">
 </form>
 </div>
