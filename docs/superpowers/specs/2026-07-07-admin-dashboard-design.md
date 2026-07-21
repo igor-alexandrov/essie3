@@ -435,10 +435,21 @@ still guards against slow-loris on the admin port.
 | Value        | Effect                                              |
 |--------------|-----------------------------------------------------|
 | unset / `""` | Admin dashboard disabled (default). No second port. |
-| e.g. `9001`  | Dashboard served at `http://127.0.0.1:9001`.        |
+| e.g. `9001`  | Dashboard served on `<ESSIE3_ADMIN_HOST>:9001`.     |
 
-Always binds loopback. Binding a non-loopback interface is intentionally
-not offered in v1 — the surface is unauthenticated.
+### `ESSIE3_ADMIN_HOST`
+
+Interface the admin server binds; default `127.0.0.1`. The surface is
+unauthenticated, so loopback is the safe default for a bare `go run` on
+a dev machine.
+
+**Container caveat:** a process bound to `127.0.0.1` *inside* a container
+is unreachable through a Docker published port — Docker forwards host
+traffic to the container's external interface, not its loopback. To use
+the dashboard from a container, set `ESSIE3_ADMIN_HOST=0.0.0.0`; the
+container boundary and the `ports:` mapping then govern exposure. The S3
+server already binds all interfaces (`:PORT`), which is why it works in
+Docker unchanged. The admin `Addr` is `net.JoinHostPort(adminHost, adminPort)`.
 
 ### Interaction with existing vars
 

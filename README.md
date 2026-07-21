@@ -120,7 +120,8 @@ have dedicated sections below with the full details.
 | `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, requires this access key on requests. See [Auth](#auth-optional). |
 | `ESSIE3_FALLBACK_PUBLIC`            | `false`           | When auth is on, `true` serves fallbacks anonymously. See [Auth](#auth-optional). |
 | `ESSIE3_DEBUG`                      | *(unset)*         | When `true`, logs full request/response details to stderr.                  |
-| `ESSIE3_ADMIN_PORT`                 | *(unset)*         | When set, serves the read-only admin dashboard on `127.0.0.1:<port>`. See [Admin dashboard](#admin-dashboard). |
+| `ESSIE3_ADMIN_PORT`                 | *(unset)*         | When set, serves the read-only admin dashboard on this port. See [Admin dashboard](#admin-dashboard). |
+| `ESSIE3_ADMIN_HOST`                 | `127.0.0.1`       | Interface the admin dashboard binds. Set to `0.0.0.0` to reach it through a container's published port. See [Admin dashboard](#admin-dashboard). |
 
 ## Usage
 
@@ -313,10 +314,26 @@ It is a single page with three regions:
   soft-refresh the bucket listing, so new objects appear without a reload.
 
 The dashboard is **observational only** — no upload, delete, or
-configuration. It is served on a **separate loopback port** (`127.0.0.1`
-only) so it never collides with the S3 API and is not exposed off the
-host; it has no authentication of its own. Leave `ESSIE3_ADMIN_PORT`
-unset to disable it entirely (the default).
+configuration. It is served on a **separate port** so it never collides
+with the S3 API, and binds `127.0.0.1` by default since it has no
+authentication of its own. Leave `ESSIE3_ADMIN_PORT` unset to disable it
+entirely (the default).
+
+> [!IMPORTANT]
+> **In Docker**, a process bound to `127.0.0.1` inside the container is
+> unreachable through a published port — Docker forwards to the
+> container's external interface, not its loopback. Set
+> `ESSIE3_ADMIN_HOST=0.0.0.0` so the dashboard binds all interfaces
+> inside the container; the container boundary and your `ports:` mapping
+> then control exposure. For example:
+>
+> ```yaml
+> environment:
+>   ESSIE3_ADMIN_PORT: "9001"
+>   ESSIE3_ADMIN_HOST: "0.0.0.0"
+> ports:
+>   - "9001:9001"
+> ```
 
 ## Storage layout
 

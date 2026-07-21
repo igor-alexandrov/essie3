@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +24,9 @@ func main() {
 	dataDir := getenv("ESSIE3_DATA_DIR", "./data")
 	fallbackDataDir := getenv("ESSIE3_FALLBACK_DATA_DIR", "./fallback-data")
 	adminPort := os.Getenv("ESSIE3_ADMIN_PORT")
+	// Loopback by default (the admin surface is unauthenticated). Set to
+	// 0.0.0.0 to reach it through a container's published port.
+	adminHost := getenv("ESSIE3_ADMIN_HOST", "127.0.0.1")
 
 	storage := NewStorage(dataDir)
 	inlineExts := DefaultInlineExtensions
@@ -60,7 +64,7 @@ func main() {
 		fmt.Printf("  debug:    enabled\n")
 	}
 	if adminPort != "" {
-		fmt.Printf("  admin:    http://127.0.0.1:%s\n", adminPort)
+		fmt.Printf("  admin:    http://%s\n", net.JoinHostPort(adminHost, adminPort))
 	}
 
 	var handler http.Handler = NewHandler(storage, fallback, auth)
@@ -87,7 +91,7 @@ func main() {
 	if broker != nil {
 		admin := NewAdminServer(storage, fallback, broker, startedAt)
 		adminSrv = &http.Server{
-			Addr:              "127.0.0.1:" + adminPort,
+			Addr:              net.JoinHostPort(adminHost, adminPort),
 			Handler:           admin.Handler(),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
