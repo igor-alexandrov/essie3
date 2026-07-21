@@ -218,10 +218,14 @@ func classifyOutcome(method string, status int, fallback string) string
 ```
 
 Counter semantics for the hit-rate stat: a GET/HEAD whose outcome is
-`miss` or `fallback` increments `reads`; `fallback` additionally
-increments `fallbacks`. Hit rate = `fallbacks / reads` (0 when
-`reads == 0`). This is computed in `Publish` from the already-derived
-outcome, so there's a single source of truth.
+`real`, `miss`, or `fallback` increments `reads`; `fallback`
+additionally increments `fallbacks`. Hit rate = `fallbacks / reads`
+(0 when `reads == 0`) — i.e. the fraction of read requests served by a
+fallback. The denominator must include `real` reads; counting only
+misses (`miss` + `fallback`) pegs the rate at 0% or 100% for any given
+dev setup. `write`/`delete`/`denied` do not count as reads. This is
+computed in `Publish` from the already-derived outcome, so there's a
+single source of truth.
 
 ### New file: `admin.go`
 

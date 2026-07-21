@@ -35,7 +35,7 @@ type TrafficBroker struct {
 	seq  uint64
 	subs map[chan TrafficEvent]struct{}
 	// counters for the stats page
-	reads     uint64 // GET/HEAD that missed a stored object (miss or fallback)
+	reads     uint64 // GET/HEAD reads served: real object, fallback, or miss
 	fallbacks uint64 // subset of reads served by a fallback
 }
 
@@ -69,12 +69,15 @@ func (b *TrafficBroker) Publish(e TrafficEvent) {
 		b.ring = append(b.ring, e)
 	}
 
+	// Hit rate = fallbacks / all reads, so the denominator counts every
+	// GET/HEAD that was served or missed (real, fallback, or miss) — not
+	// just misses, which would peg the rate at 0% or 100%.
 	switch e.Outcome {
+	case "real", "miss":
+		b.reads++
 	case "fallback":
 		b.reads++
 		b.fallbacks++
-	case "miss":
-		b.reads++
 	}
 
 	for ch := range b.subs {

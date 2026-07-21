@@ -66,20 +66,23 @@ func TestTrafficBroker_SlowSubscriberDoesNotBlock(t *testing.T) {
 
 func TestTrafficBroker_Counters(t *testing.T) {
 	b := NewTrafficBroker(100)
-	// 2 fallbacks, 1 miss, plus some non-read events that must not count.
+	// reads = real + fallback + miss = 4; fallbacks = 2. Non-read
+	// outcomes (write/delete/denied) must not count toward reads.
 	b.Publish(TrafficEvent{Outcome: "fallback"})
 	b.Publish(TrafficEvent{Outcome: "fallback"})
 	b.Publish(TrafficEvent{Outcome: "miss"})
 	b.Publish(TrafficEvent{Outcome: "real"})
 	b.Publish(TrafficEvent{Outcome: "write"})
+	b.Publish(TrafficEvent{Outcome: "denied"})
 
 	reads, fallbacks := b.Stats()
-	if reads != 3 {
-		t.Errorf("reads = %d, want 3", reads)
+	if reads != 4 {
+		t.Errorf("reads = %d, want 4", reads)
 	}
 	if fallbacks != 2 {
 		t.Errorf("fallbacks = %d, want 2", fallbacks)
 	}
+	// Hit rate = 2/4 = 50% — a meaningful value, not pegged 0/100.
 }
 
 func TestClassifyOutcome(t *testing.T) {
