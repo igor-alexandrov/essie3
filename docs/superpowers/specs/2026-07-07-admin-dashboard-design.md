@@ -69,6 +69,14 @@ only page JS is one `EventSource` call for the live feed.
   bucket's object table (key, size, content-type, ACL, created-at), a
   back link to the dashboard, and the shared "Live" header. An unknown
   bucket returns a 404 HTML page (not the S3 XML error shape).
+  - **Search** via `?q=`: a `<form method="get">` filters the object
+    list server-side. `matchKey` treats a query with glob metacharacters
+    (`* ? [`) as `path.Match` against the full key *and* its basename
+    (so `*.jpg` also matches `dir/a.jpg`), otherwise as a
+    case-insensitive substring — the in-process equivalent of
+    `ls <pattern>`, no shelling out. The live soft-refresh appends
+    `location.search` to the fragment fetch so a filtered view stays
+    filtered across updates.
 - Data / fragment endpoints:
   - **`/events`** — an SSE stream. On connect it replays the in-memory
     ring buffer (recent history) then pushes each new request live.

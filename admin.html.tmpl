@@ -34,8 +34,10 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 (function () {
   const cfg = window.__essie3 || { bucket: "" };
   const feed = document.getElementById("feed");
+  // On a bucket page, carry the current ?q= filter into the soft-refresh
+  // so a live update keeps showing the filtered view.
   const listUrl = cfg.bucket
-    ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment"
+    ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment" + location.search
     : "/fragment";
 
   // Uptime is a pure client-side clock — no network, no polling.
@@ -206,6 +208,10 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{template "topbar" .}}
 <main>
 <p><a href="/">&larr; All buckets</a></p>
+<form role="search" method="get">
+<input type="search" name="q" value="{{.Query}}" placeholder="Filter keys — substring, or a glob like *.jpg" aria-label="Search keys">
+<button type="submit">Search</button>
+</form>
 {{template "bucket_content" .}}
 </main>
 <script>window.__essie3 = { bucket: "{{.Name}}" };</script>
@@ -215,6 +221,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 
 {{define "bucket_content"}}<section id="content">
 <h2>{{.Name}}</h2>
+{{if .Query}}<p><small>{{len .Objects}} of {{.Total}} object(s) match &ldquo;{{.Query}}&rdquo;.</small></p>{{end}}
 {{if .Objects}}
 <table>
 <thead>
@@ -233,6 +240,6 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 </tbody>
 </table>
 {{else}}
-<p>No objects.</p>
+<p>{{if .Query}}No keys match &ldquo;{{.Query}}&rdquo;.{{else}}No objects.{{end}}</p>
 {{end}}
 </section>{{end}}

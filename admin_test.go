@@ -120,6 +120,44 @@ func TestAdmin_BucketPage_AuthOnlyLinksPublicRead(t *testing.T) {
 	}
 }
 
+func TestAdmin_BucketSearch(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	s.PutObject("x", "notes.txt", []byte("a"), &ObjectMeta{ContentType: "text/plain"})
+	s.PutObject("x", "photo.jpg", []byte("b"), &ObjectMeta{ContentType: "image/jpeg"})
+	s.PutObject("x", "logo.png", []byte("c"), &ObjectMeta{ContentType: "image/png"})
+	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePool)
+	admin := NewAdminServer(s, fb, NewTrafficBroker(10), time.Now(), "9000", false)
+	srv := httptest.NewServer(admin.Handler())
+	defer srv.Close()
+
+	// Substring match (case-insensitive).
+	_, body := get(t, srv.URL+"/buckets/x?q=JPG")
+	if !strings.Contains(body, "photo.jpg") || strings.Contains(body, "notes.txt") || strings.Contains(body, "logo.png") {
+		t.Errorf("q=JPG should match only photo.jpg; body:\n%s", body)
+	}
+	if !strings.Contains(body, "1 of 3") {
+		t.Error("expected match-count line '1 of 3'")
+	}
+
+	// Glob match.
+	_, body = get(t, srv.URL+"/buckets/x?q=%2A.png") // *.png
+	if !strings.Contains(body, "logo.png") || strings.Contains(body, "photo.jpg") {
+		t.Errorf("q=*.png should match only logo.png; body:\n%s", body)
+	}
+
+	// No match.
+	_, body = get(t, srv.URL+"/buckets/x?q=zzz")
+	if !strings.Contains(body, "No keys match") {
+		t.Error("expected no-match message")
+	}
+
+	// Fragment honors the query too.
+	_, body = get(t, srv.URL+"/buckets/x/fragment?q=jpg")
+	if !strings.Contains(body, "photo.jpg") || strings.Contains(body, "notes.txt") {
+		t.Errorf("fragment q=jpg should filter; body:\n%s", body)
+	}
+}
+
 func TestAdmin_BucketPage_Unknown(t *testing.T) {
 	srv, _ := testAdminServer(t)
 

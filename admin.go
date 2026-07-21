@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -87,7 +89,9 @@ type dashboardBucket struct {
 
 type bucketView struct {
 	Name    string
-	Objects []adminObject
+	Query   string        // the ?q= filter, echoed into the search box
+	Total   int           // objects in the bucket before filtering
+	Objects []adminObject // objects after filtering
 }
 
 type adminObject struct {
@@ -136,17 +140,20 @@ func (a *AdminServer) dashboard() dashboardView {
 	}
 }
 
-// bucketDetail returns the object rows for one bucket, or an error
-// (os.ErrNotExist / errInvalidName) the caller renders as a 404. objHost
-// is the host:port of the S3 server (from the request), used to build
-// each object's view-link.
-func (a *AdminServer) bucketDetail(name, objHost string) (bucketView, error) {
+// bucketDetail returns the object rows for one bucket, optionally
+// filtered by q, or an error (os.ErrNotExist / errInvalidName) the
+// caller renders as a 404. objHost is the host:port of the S3 server
+// (from the request), used to build each object's view-link.
+func (a *AdminServer) bucketDetail(name, objHost, q string) (bucketView, error) {
 	objs, err := a.storage.ListObjects(name)
 	if err != nil {
 		return bucketView{}, err
 	}
 	rows := make([]adminObject, 0, len(objs))
 	for _, o := range objs {
+		if !matchKey(o.Key, q) {
+			continue
+		}
 		u := url.URL{Scheme: "http", Host: objHost, Path: "/" + name + "/" + o.Key}
 		rows = append(rows, adminObject{
 			Key:         o.Key,
@@ -158,7 +165,29 @@ func (a *AdminServer) bucketDetail(name, objHost string) (bucketView, error) {
 			Created:     formatCreated(o.CreatedAt),
 		})
 	}
-	return bucketView{Name: name, Objects: rows}, nil
+	return bucketView{Name: name, Query: q, Total: len(objs), Objects: rows}, nil
+}
+
+// matchKey reports whether key satisfies the search query q. An empty q
+// matches everything. A q containing glob metacharacters (* ? [) is
+// matched with path.Match against the full key and its basename (so
+// "*.jpg" also matches "dir/a.jpg"); otherwise q is a case-insensitive
+// substring match. This is the in-process equivalent of `ls <pattern>` —
+// no shelling out.
+func matchKey(key, q string) bool {
+	if q == "" {
+		return true
+	}
+	if strings.ContainsAny(q, "*?[") {
+		if ok, err := path.Match(q, key); err == nil && ok {
+			return true
+		}
+		if ok, err := path.Match(q, path.Base(key)); err == nil && ok {
+			return true
+		}
+		return false
+	}
+	return strings.Contains(strings.ToLower(key), strings.ToLower(q))
 }
 
 // s3Host derives the S3 server's host:port from the admin request's Host
@@ -194,7 +223,7 @@ func (a *AdminServer) handleFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
-	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r))
+	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r), r.URL.Query().Get("q"))
 	if err != nil {
 		a.notFound(w)
 		return
@@ -203,7 +232,7 @@ func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminServer) handleBucketFragment(w http.ResponseWriter, r *http.Request) {
-	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r))
+	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r), r.URL.Query().Get("q"))
 	if err != nil {
 		a.notFound(w)
 		return
