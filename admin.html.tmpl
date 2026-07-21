@@ -19,6 +19,9 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 .page-head h2 { margin: 0; }
 .bucket-search { margin: 0; flex: 0 0 auto; }
 .bucket-search input { margin: 0; width: 15rem; max-width: 100%; font-size: .875rem; }
+/* Wide tables scroll within their box on small screens instead of
+   forcing the whole page to scroll horizontally. */
+.scroll-x { overflow-x: auto; }
 </style>{{end}}
 
 {{define "topbar"}}<header>
@@ -27,12 +30,14 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 
 {{define "feed"}}<section>
 <h2>Live traffic</h2>
+<div class="scroll-x">
 <table>
 <thead>
 <tr><th>Time</th><th>Method</th><th>Bucket / key</th><th>Status</th><th>Outcome</th></tr>
 </thead>
 <tbody id="feed"></tbody>
 </table>
+</div>
 </section>{{end}}
 
 {{define "script"}}<script>
@@ -181,6 +186,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{define "buckets_section"}}<section id="content">
 <h2>Buckets</h2>
 {{if .Buckets}}
+<div class="scroll-x">
 <table>
 <thead>
 <tr><th>Bucket</th><th>Objects</th><th>Size</th></tr>
@@ -195,6 +201,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{end}}
 </tbody>
 </table>
+</div>
 {{else}}
 <p>No buckets yet.</p>
 {{end}}
@@ -229,6 +236,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{define "bucket_content"}}<section id="content">
 {{if .Query}}<p><small>{{len .Objects}} of {{.Total}} object(s) match &ldquo;{{.Query}}&rdquo;.</small></p>{{end}}
 {{if .Objects}}
+<div class="scroll-x">
 <table>
 <thead>
 <tr><th>Key</th><th>Size</th><th>Content-Type</th><th>ACL</th><th>Created</th></tr>
@@ -245,6 +253,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{end}}
 </tbody>
 </table>
+</div>
 {{else}}
 <p>{{if .Query}}No keys match &ldquo;{{.Query}}&rdquo;.{{else}}No objects.{{end}}</p>
 {{end}}
