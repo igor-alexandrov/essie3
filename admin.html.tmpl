@@ -67,6 +67,39 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
       .catch(function () {});
   }
 
+  // Live-feed cell builders. The path links to the object on the S3
+  // server (new tab) — but only when auth is off, since an
+  // unauthenticated browser GET of a non-public object would 403 and the
+  // client can't know each object's ACL.
+  function appendCell(tr, text) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+  }
+  function s3Url(bucket, key) {
+    const base = location.protocol + "//" + location.hostname + ":" + cfg.s3Port;
+    let p = "/" + encodeURIComponent(bucket);
+    if (key) p += "/" + key.split("/").map(encodeURIComponent).join("/");
+    return base + p;
+  }
+  function appendPathCell(tr, bucket, key) {
+    const td = document.createElement("td");
+    if (bucket) {
+      const label = key ? bucket + "/" + key : bucket;
+      if (!cfg.authEnabled && cfg.s3Port) {
+        const a = document.createElement("a");
+        a.href = s3Url(bucket, key);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = label;
+        td.appendChild(a);
+      } else {
+        td.textContent = label;
+      }
+    }
+    tr.appendChild(td);
+  }
+
   const hasStats = !!document.getElementById("serverstats");
   let listTimer = null, statsTimer = null;
 
@@ -78,12 +111,11 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
     if (feed) {
       const tr = document.createElement("tr");
       const when = e.time ? new Date(e.time).toLocaleTimeString() : "";
-      const path = e.bucket ? (e.key ? e.bucket + "/" + e.key : e.bucket) : "";
-      [when, e.method, path, e.status, e.outcome].forEach(function (v) {
-        const td = document.createElement("td");
-        td.textContent = v;
-        tr.appendChild(td);
-      });
+      appendCell(tr, when);
+      appendCell(tr, e.method);
+      appendPathCell(tr, e.bucket, e.key);
+      appendCell(tr, e.status);
+      appendCell(tr, e.outcome);
       feed.insertBefore(tr, feed.firstChild);
       while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
     }
@@ -121,7 +153,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 {{template "buckets_section" .}}
 {{template "feed" .}}
 </main>
-<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}} };</script>
+<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}}, s3Port: "{{.S3Port}}", authEnabled: {{.AuthEnabled}} };</script>
 {{template "script"}}
 </body>
 </html>{{end}}

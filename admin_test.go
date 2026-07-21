@@ -58,6 +58,12 @@ func TestAdmin_Index(t *testing.T) {
 			t.Errorf("index body missing %q", want)
 		}
 	}
+	// Feed-link config is wired into the page (S3 port + auth state).
+	for _, want := range []string{"s3Port", `"9000"`, "authEnabled"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("index config missing %q", want)
+		}
+	}
 	if strings.Contains(body, "logo.png") {
 		t.Error("dashboard should not list objects (logo.png present)")
 	}

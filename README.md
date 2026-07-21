@@ -315,8 +315,10 @@ The dashboard (`/`) has three sections:
   browser); they show as plain text instead.
 - **Live traffic** — every request streamed in as it happens (method,
   bucket/key, status, and outcome: `real`, `fallback`, `miss`, `denied`,
-  `write`, or `delete`), over Server-Sent Events. Writes and deletes also
-  soft-refresh the listing, so new objects appear without a reload.
+  `write`, or `delete`), over Server-Sent Events. The bucket/key links to
+  the object on the S3 server (new tab; omitted when auth is on). Writes
+  and deletes also soft-refresh the listing, so new objects appear
+  without a reload.
 
 The dashboard is **observational only** — no upload, delete, or
 configuration. It is served on a **separate port** so it never collides

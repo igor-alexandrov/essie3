@@ -67,7 +67,9 @@ func (a *AdminServer) Handler() http.Handler {
 
 type dashboardView struct {
 	Uptime      string
-	StartedMs   int64 // process start, Unix ms — the JS uptime clock's origin
+	StartedMs   int64  // process start, Unix ms — the JS uptime clock's origin
+	S3Port      string // for building live-feed object links client-side
+	AuthEnabled bool   // gates feed links (only link when a browser could fetch)
 	BucketCount int
 	ObjectCount int
 	TotalBytes  string
@@ -122,6 +124,8 @@ func (a *AdminServer) dashboard() dashboardView {
 	return dashboardView{
 		Uptime:      formatUptime(time.Since(a.startedAt)),
 		StartedMs:   a.startedAt.UnixMilli(),
+		S3Port:      a.s3Port,
+		AuthEnabled: a.authEnabled,
 		BucketCount: len(buckets),
 		ObjectCount: totalObjects,
 		TotalBytes:  humanBytes(totalBytes),
