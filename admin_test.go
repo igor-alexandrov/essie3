@@ -53,7 +53,7 @@ func TestAdmin_Index(t *testing.T) {
 	}
 	// The dashboard lists buckets as links to their own pages; it does
 	// not list individual objects.
-	for _, want := range []string{"Overview", "assets", `href="/buckets/assets"`, "EventSource", "Live traffic"} {
+	for _, want := range []string{"Fallback hit rate", "assets", `href="/buckets/assets"`, "EventSource", "Live traffic"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index body missing %q", want)
 		}
@@ -109,7 +109,7 @@ func TestAdmin_Fragment(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
-	for _, want := range []string{"Overview", "assets"} {
+	for _, want := range []string{"Fallback hit rate", "assets"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("fragment body missing %q", want)
 		}
