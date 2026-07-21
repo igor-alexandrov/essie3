@@ -51,22 +51,51 @@ func TestAdmin_Index(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
-	for _, want := range []string{"Overview", "assets", "logo.png", "EventSource", "Live traffic"} {
+	// The dashboard lists buckets as links to their own pages; it does
+	// not list individual objects.
+	for _, want := range []string{"Overview", "assets", `href="/buckets/assets"`, "EventSource", "Live traffic"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index body missing %q", want)
 		}
 	}
+	if strings.Contains(body, "logo.png") {
+		t.Error("dashboard should not list objects (logo.png present)")
+	}
 }
 
-func TestAdmin_IndexEscapesKeys(t *testing.T) {
+func TestAdmin_BucketPage(t *testing.T) {
 	srv, _ := testAdminServer(t)
 
-	_, body := get(t, srv.URL+"/")
+	resp, body := get(t, srv.URL+"/buckets/assets")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	for _, want := range []string{"logo.png", `href="/"`, `bucket: "assets"`, "EventSource"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("bucket page missing %q", want)
+		}
+	}
+	// Keys are HTML-escaped.
 	if strings.Contains(body, "a<b&c.txt") {
-		t.Error("raw unescaped key present in body")
+		t.Error("raw unescaped key present in bucket page")
 	}
 	if !strings.Contains(body, "a&lt;b&amp;c.txt") {
-		t.Error("expected HTML-escaped key a&lt;b&amp;c.txt in body")
+		t.Error("expected HTML-escaped key a&lt;b&amp;c.txt in bucket page")
+	}
+}
+
+func TestAdmin_BucketPage_Unknown(t *testing.T) {
+	srv, _ := testAdminServer(t)
+
+	resp, body := get(t, srv.URL+"/buckets/nope")
+	if resp.StatusCode != 404 {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	if strings.Contains(body, "<Error>") {
+		t.Error("bucket 404 should be HTML, not the S3 XML error shape")
 	}
 }
 
@@ -80,7 +109,7 @@ func TestAdmin_Fragment(t *testing.T) {
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
-	for _, want := range []string{"Overview", "assets", "logo.png"} {
+	for _, want := range []string{"Overview", "assets"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("fragment body missing %q", want)
 		}
@@ -89,6 +118,23 @@ func TestAdmin_Fragment(t *testing.T) {
 	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource", "Live traffic"} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("fragment body should not contain %q", forbidden)
+		}
+	}
+}
+
+func TestAdmin_BucketFragment(t *testing.T) {
+	srv, _ := testAdminServer(t)
+
+	resp, body := get(t, srv.URL+"/buckets/assets/fragment")
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(body, "logo.png") {
+		t.Error("bucket fragment missing object key logo.png")
+	}
+	for _, forbidden := range []string{"<!DOCTYPE", "<html", "EventSource"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("bucket fragment should not contain %q", forbidden)
 		}
 	}
 }

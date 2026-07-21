@@ -1,11 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>essie3 admin</title>
-<link rel="stylesheet" href="/assets/pico.classless.min.css">
-<style>
+{{define "styles"}}<style>
 a, summary { color: #2563eb; }
 a:hover, summary:hover { color: #1d4ed8; }
 @media (prefers-color-scheme: dark) { a, summary { color: #60a5fa; } a:hover, summary:hover { color: #93c5fd; } }
@@ -13,17 +6,13 @@ a:hover, summary:hover { color: #1d4ed8; }
 .live .dot { display: inline-block; width: .6em; height: .6em; margin-right: .35em; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.7); animation: live-pulse 1.5s ease-out infinite; }
 @keyframes live-pulse { 70% { box-shadow: 0 0 0 .6em rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
 @media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
-</style>
-</head>
-<body>
-<header>
-<h1>essie3 <span class="live" title="Live — traffic and the bucket listing update in real time"><span class="dot"></span>Live</span></h1>
-</header>
+</style>{{end}}
 
-<main>
-{{template "content" .}}
+{{define "topbar"}}<header>
+<h1>essie3 <span class="live" title="Live — updates in real time"><span class="dot"></span>Live</span></h1>
+</header>{{end}}
 
-<section>
+{{define "feed"}}<section>
 <h2>Live traffic</h2>
 <table>
 <thead>
@@ -31,19 +20,24 @@ a:hover, summary:hover { color: #1d4ed8; }
 </thead>
 <tbody id="feed"></tbody>
 </table>
-</section>
-</main>
+</section>{{end}}
 
-<script>
+{{define "script"}}<script>
 (function () {
+  const cfg = window.__essie3 || { bucket: "" };
   const feed = document.getElementById("feed");
+  const fragmentUrl = cfg.bucket
+    ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment"
+    : "/fragment";
   let timer = null;
 
   function refresh() {
-    fetch("/fragment")
+    fetch(fragmentUrl)
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
-        if (html !== null) document.getElementById("content").innerHTML = html;
+        if (html === null) return;
+        const cur = document.getElementById("content");
+        if (cur) cur.outerHTML = html;
       })
       .catch(function () {});
   }
@@ -53,29 +47,49 @@ a:hover, summary:hover { color: #1d4ed8; }
     let e;
     try { e = JSON.parse(ev.data); } catch (_) { return; }
 
-    const tr = document.createElement("tr");
-    const when = e.time ? new Date(e.time).toLocaleTimeString() : "";
-    const path = e.bucket ? (e.key ? e.bucket + "/" + e.key : e.bucket) : "";
-    [when, e.method, path, e.status, e.outcome].forEach(function (v) {
-      const td = document.createElement("td");
-      td.textContent = v;
-      tr.appendChild(td);
-    });
-    feed.insertBefore(tr, feed.firstChild);
-    while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
+    if (feed) {
+      const tr = document.createElement("tr");
+      const when = e.time ? new Date(e.time).toLocaleTimeString() : "";
+      const path = e.bucket ? (e.key ? e.bucket + "/" + e.key : e.bucket) : "";
+      [when, e.method, path, e.status, e.outcome].forEach(function (v) {
+        const td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      feed.insertBefore(tr, feed.firstChild);
+      while (feed.childElementCount > 200) feed.removeChild(feed.lastChild);
+    }
 
-    if (e.outcome === "write" || e.outcome === "delete") {
+    if ((e.outcome === "write" || e.outcome === "delete") &&
+        (!cfg.bucket || e.bucket === cfg.bucket)) {
       clearTimeout(timer);
       timer = setTimeout(refresh, 750);
     }
   };
 })();
-</script>
-</body>
-</html>
+</script>{{end}}
 
-{{define "content"}}
-<section id="content">
+{{define "dashboard"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>essie3 admin</title>
+<link rel="stylesheet" href="/assets/pico.classless.min.css">
+{{template "styles"}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+{{template "dashboard_content" .}}
+{{template "feed" .}}
+</main>
+<script>window.__essie3 = { bucket: "" };</script>
+{{template "script"}}
+</body>
+</html>{{end}}
+
+{{define "dashboard_content"}}<section id="content">
 <h2>Overview</h2>
 <table>
 <thead>
@@ -94,9 +108,47 @@ a:hover, summary:hover { color: #1d4ed8; }
 
 <h2>Buckets</h2>
 {{if .Buckets}}
+<table>
+<thead>
+<tr><th>Bucket</th><th>Objects</th><th>Size</th></tr>
+</thead>
+<tbody>
 {{range .Buckets}}
-<details>
-<summary>{{.Name}} &middot; {{.ObjectCount}} objects &middot; {{.TotalBytes}}</summary>
+<tr>
+<td><a href="{{.Path}}">{{.Name}}</a></td>
+<td>{{.ObjectCount}}</td>
+<td>{{.TotalBytes}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p>No buckets yet.</p>
+{{end}}
+</section>{{end}}
+
+{{define "bucket"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Name}} — essie3 admin</title>
+<link rel="stylesheet" href="/assets/pico.classless.min.css">
+{{template "styles"}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<p><a href="/">&larr; All buckets</a></p>
+{{template "bucket_content" .}}
+</main>
+<script>window.__essie3 = { bucket: "{{.Name}}" };</script>
+{{template "script"}}
+</body>
+</html>{{end}}
+
+{{define "bucket_content"}}<section id="content">
+<h2>{{.Name}}</h2>
 {{if .Objects}}
 <table>
 <thead>
@@ -117,10 +169,4 @@ a:hover, summary:hover { color: #1d4ed8; }
 {{else}}
 <p>No objects.</p>
 {{end}}
-</details>
-{{end}}
-{{else}}
-<p>No buckets yet.</p>
-{{end}}
-</section>
-{{end}}
+</section>{{end}}

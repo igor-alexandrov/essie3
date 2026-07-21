@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -45,28 +46,35 @@ func (a *AdminServer) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", a.handleIndex)
 	mux.HandleFunc("GET /fragment", a.handleFragment)
+	mux.HandleFunc("GET /buckets/{name}", a.handleBucket)
+	mux.HandleFunc("GET /buckets/{name}/fragment", a.handleBucketFragment)
 	mux.HandleFunc("GET /events", a.handleEvents)
 	mux.HandleFunc("GET /assets/pico.classless.min.css", a.handleCSS)
 	mux.HandleFunc("GET /healthz", a.handleHealthz)
 	return mux
 }
 
-// --- view model ---
+// --- view models ---
 
-type adminView struct {
+type dashboardView struct {
 	Uptime      string
 	BucketCount int
 	ObjectCount int
 	TotalBytes  string
 	HitRate     string
-	Buckets     []adminBucket
+	Buckets     []dashboardBucket
 }
 
-type adminBucket struct {
+type dashboardBucket struct {
 	Name        string
+	Path        string // link to the bucket's standalone page
 	ObjectCount int
 	TotalBytes  string
-	Objects     []adminObject
+}
+
+type bucketView struct {
+	Name    string
+	Objects []adminObject
 }
 
 type adminObject struct {
@@ -77,7 +85,7 @@ type adminObject struct {
 	Created     string
 }
 
-func (a *AdminServer) view() adminView {
+func (a *AdminServer) dashboard() dashboardView {
 	reads, fallbacks := a.broker.Stats()
 	hitRate := "n/a"
 	if reads > 0 {
@@ -85,32 +93,21 @@ func (a *AdminServer) view() adminView {
 	}
 
 	buckets, _ := a.storage.ListBuckets()
-	vbuckets := make([]adminBucket, 0, len(buckets))
+	vbuckets := make([]dashboardBucket, 0, len(buckets))
 	var totalObjects int
 	var totalBytes int64
 	for _, b := range buckets {
-		objs, _ := a.storage.ListObjects(b.Name)
-		rows := make([]adminObject, 0, len(objs))
-		for _, o := range objs {
-			rows = append(rows, adminObject{
-				Key:         o.Key,
-				Size:        humanBytes(o.Size),
-				ContentType: o.ContentType,
-				ACL:         o.ACL,
-				Created:     formatCreated(o.CreatedAt),
-			})
-		}
-		vbuckets = append(vbuckets, adminBucket{
+		vbuckets = append(vbuckets, dashboardBucket{
 			Name:        b.Name,
+			Path:        "/buckets/" + url.PathEscape(b.Name),
 			ObjectCount: b.ObjectCount,
 			TotalBytes:  humanBytes(b.TotalBytes),
-			Objects:     rows,
 		})
 		totalObjects += b.ObjectCount
 		totalBytes += b.TotalBytes
 	}
 
-	return adminView{
+	return dashboardView{
 		Uptime:      formatUptime(time.Since(a.startedAt)),
 		BucketCount: len(buckets),
 		ObjectCount: totalObjects,
@@ -120,20 +117,67 @@ func (a *AdminServer) view() adminView {
 	}
 }
 
+// bucketDetail returns the object rows for one bucket, or an error
+// (os.ErrNotExist / errInvalidName) the caller renders as a 404.
+func (a *AdminServer) bucketDetail(name string) (bucketView, error) {
+	objs, err := a.storage.ListObjects(name)
+	if err != nil {
+		return bucketView{}, err
+	}
+	rows := make([]adminObject, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, adminObject{
+			Key:         o.Key,
+			Size:        humanBytes(o.Size),
+			ContentType: o.ContentType,
+			ACL:         o.ACL,
+			Created:     formatCreated(o.CreatedAt),
+		})
+	}
+	return bucketView{Name: name, Objects: rows}, nil
+}
+
 // --- handlers ---
 
-func (a *AdminServer) handleIndex(w http.ResponseWriter, r *http.Request) {
+func (a *AdminServer) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := a.tmpl.Execute(w, a.view()); err != nil {
+	if err := a.tmpl.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
+func (a *AdminServer) handleIndex(w http.ResponseWriter, r *http.Request) {
+	a.render(w, "dashboard", a.dashboard())
+}
+
 func (a *AdminServer) handleFragment(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := a.tmpl.ExecuteTemplate(w, "content", a.view()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	a.render(w, "dashboard_content", a.dashboard())
+}
+
+func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
+	v, err := a.bucketDetail(r.PathValue("name"))
+	if err != nil {
+		a.notFound(w)
+		return
 	}
+	a.render(w, "bucket", v)
+}
+
+func (a *AdminServer) handleBucketFragment(w http.ResponseWriter, r *http.Request) {
+	v, err := a.bucketDetail(r.PathValue("name"))
+	if err != nil {
+		a.notFound(w)
+		return
+	}
+	a.render(w, "bucket_content", v)
+}
+
+// notFound serves an HTML 404 (this is the admin UI, not the S3 API, so
+// it does not use the S3 XML error shape).
+func (a *AdminServer) notFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	io.WriteString(w, `<!doctype html><meta charset="utf-8"><title>Not found — essie3 admin</title><main><h1>404</h1><p>No such bucket. <a href="/">Back to dashboard</a></p></main>`)
 }
 
 func (a *AdminServer) handleEvents(w http.ResponseWriter, r *http.Request) {

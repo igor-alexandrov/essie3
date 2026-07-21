@@ -14,14 +14,18 @@ bucket name, no auth entanglement). It is strictly observational:
 every route is `GET`, nothing mutates state. Upload, delete, and
 runtime configuration are explicit **non-goals** (see Out of scope).
 
-It is a **single page**: stats, the live traffic feed, and the
-bucket/object listing all live on `/`. There are no sub-pages to
-navigate — each bucket's objects sit in a native `<details>` disclosure
-on the same page, so "expand a bucket" needs no route and no JS. The
-page is **live**: the traffic feed streams via SSE, and whenever a
-write/delete event arrives on that same stream the stats + listing
-region soft-refreshes (a debounced re-fetch of an HTML fragment), so a
-newly PUT object appears without a manual reload.
+It is **multi-page**: the dashboard (`/`) shows stats, the live traffic
+feed, and the list of buckets — each bucket name links to its own
+standalone page (`/buckets/{name}`) listing that bucket's objects. Every
+page is **live**: the dashboard's bucket list soft-refreshes when a
+write/delete arrives on the SSE stream, and a bucket page soft-refreshes
+its own object table when a write/delete for *that* bucket arrives. Both
+use the same mechanism — a debounced re-fetch of an HTML fragment
+(`/fragment` for the dashboard, `/buckets/{name}/fragment` for a bucket)
+that swaps the `#content` region — so a newly PUT object appears without
+a manual reload. A shared page shell (header with the "Live" indicator,
+plus the feed on the dashboard) and one vanilla-JS `<script>` serve both
+page types; the object rows live on the bucket page, not the dashboard.
 
 Like the rest of essie3 the *code* is pure stdlib — `net/http`,
 `html/template`, `embed`, and Server-Sent Events via `http.Flusher`.
@@ -46,31 +50,31 @@ only page JS is one `EventSource` call for the live feed.
   disabled (zero behavior change for existing users). Set to a port
   number → a second `http.Server` starts, bound to **loopback only**
   (`127.0.0.1:<port>`), because the admin surface has no auth.
-- A **single page** (`GET /`), server-rendered, containing three
-  regions:
+- A **dashboard page** (`GET /`), server-rendered:
   - **Stats strip** — bucket count, total objects, total bytes,
     fallback hit rate, uptime.
   - **Live traffic feed** — a table that streams new requests as they
     arrive.
-  - **Buckets + objects** — every bucket with object count and total
-    size; each bucket is a `<details>` disclosure whose body is that
-    bucket's object table (key, size, content-type, ACL, created-at),
-    rendered inline.
-- Two data endpoints:
+  - **Buckets** — every bucket with object count and total size; the
+    name links to that bucket's standalone page. No object rows here.
+- A **bucket page** (`GET /buckets/{name}`), server-rendered: the
+  bucket's object table (key, size, content-type, ACL, created-at), a
+  back link to the dashboard, and the shared "Live" header. An unknown
+  bucket returns a 404 HTML page (not the S3 XML error shape).
+- Data / fragment endpoints:
   - **`/events`** — an SSE stream. On connect it replays the in-memory
     ring buffer (recent history) then pushes each new request live.
-  - **`/fragment`** — returns just the stats-strip + buckets-region
-    HTML (no page chrome). The page re-fetches this on a debounced
-    trigger to soft-refresh the listing; it is the same markup the
-    full page renders inline, produced by a shared template block.
-- **Soft auto-refresh.** One `EventSource('/events')` drives both the
-  feed (append a row per event) and the listing: when an event's
-  outcome is `write` or `delete` the client schedules a debounced
-  (~750 ms) `fetch('/fragment')` and swaps the returned HTML into the
-  stats+buckets region. Reads don't trigger a refresh (they don't
-  change the filesystem). A periodic timer is **not** needed — writes
-  are the only thing that changes the listing, and they all pass
-  through the feed.
+  - **`/fragment`** — the dashboard's stats + bucket-list region as an
+    HTML fragment (no page chrome), for soft-refresh.
+  - **`/buckets/{name}/fragment`** — one bucket's object-table region
+    as an HTML fragment, for that bucket page's soft-refresh.
+- **Soft auto-refresh.** Each page opens one `EventSource('/events')`.
+  On the dashboard the feed appends a row per event; when an event's
+  outcome is `write` or `delete` it schedules a debounced (~750 ms)
+  `fetch('/fragment')` and swaps `#content`. A bucket page has no feed
+  table; it refreshes only when a `write`/`delete` event's bucket
+  matches, re-fetching `/buckets/{name}/fragment`. Reads never trigger
+  a refresh (they don't change the filesystem).
 - Live traffic is captured by a middleware wrapping the S3 handler,
   structurally identical to `WithDebugLogging`: it records one
   `TrafficEvent` per request into an in-process broker. Each request's
@@ -260,12 +264,14 @@ type AdminServer struct {
 func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time) *AdminServer
 
 // Handler wires the routes onto a ServeMux:
-//   GET /                        -> single page (stats + feed + buckets)
-//   GET /fragment                -> just the stats+buckets "content" block
-//   GET /events                  -> SSE stream (backlog + live)
+//   GET /                          -> dashboard (stats + feed + bucket links)
+//   GET /fragment                  -> dashboard stats+buckets fragment
+//   GET /buckets/{name}            -> one bucket's standalone page
+//   GET /buckets/{name}/fragment   -> that bucket's object-table fragment
+//   GET /events                    -> SSE stream (backlog + live)
 //   GET /assets/pico.classless.min.css   -> embedded stylesheet (long cache)
-//   GET /healthz                 -> 200 "ok" (liveness, plain text)
-// Any non-GET -> 405. Unknown path -> 404.
+//   GET /healthz                   -> 200 "ok" (liveness, plain text)
+// Any non-GET -> 405. Unknown path (incl. unknown bucket) -> 404 HTML.
 func (a *AdminServer) Handler() http.Handler
 ```
 
