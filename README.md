@@ -302,16 +302,19 @@ ESSIE3_ADMIN_PORT=9001 go run .
 # open http://127.0.0.1:9001
 ```
 
-It is a single page with three regions:
+The dashboard (`/`) has three sections:
 
 - **Overview** — uptime, bucket count, total objects, total size on disk,
-  and the fallback hit rate.
-- **Buckets** — every bucket; expand one to see its objects (key, size,
-  content-type, ACL, created-at).
+  and the fallback hit rate. Live: uptime ticks client-side and the stats
+  refresh as requests arrive.
+- **Buckets** — every bucket with its object count and size; each name
+  links to that bucket's own page listing its objects (key, size,
+  content-type, ACL, created-at). Object keys link to the file on the S3
+  server, opened in a new tab.
 - **Live traffic** — every request streamed in as it happens (method,
   bucket/key, status, and outcome: `real`, `fallback`, `miss`, `denied`,
   `write`, or `delete`), over Server-Sent Events. Writes and deletes also
-  soft-refresh the bucket listing, so new objects appear without a reload.
+  soft-refresh the listing, so new objects appear without a reload.
 
 The dashboard is **observational only** — no upload, delete, or
 configuration. It is served on a **separate port** so it never collides

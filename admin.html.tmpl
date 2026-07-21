@@ -190,7 +190,7 @@ tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-ba
 <tbody>
 {{range .Objects}}
 <tr>
-<td>{{.Key}}</td>
+<td><a href="{{.URL}}" target="_blank" rel="noopener">{{.Key}}</a></td>
 <td>{{.Size}}</td>
 <td>{{.ContentType}}</td>
 <td>{{.ACL}}</td>

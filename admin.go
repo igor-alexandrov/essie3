@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -24,18 +25,20 @@ type AdminServer struct {
 	fallback  *Fallback
 	broker    *TrafficBroker
 	startedAt time.Time
+	s3Port    string // ESSIE3_PORT — where object view-links point
 	tmpl      *template.Template
 }
 
 // NewAdminServer parses the embedded template once and returns a ready
-// server. The template's root is the full page; its "content" block is
-// the soft-refreshable stats+buckets region reused by /fragment.
-func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time) *AdminServer {
+// server. s3Port is the S3 API port; object view-links on bucket pages
+// point at http://<admin host>:<s3Port>/<bucket>/<key>.
+func NewAdminServer(s *Storage, fb *Fallback, b *TrafficBroker, startedAt time.Time, s3Port string) *AdminServer {
 	return &AdminServer{
 		storage:   s,
 		fallback:  fb,
 		broker:    b,
 		startedAt: startedAt,
+		s3Port:    s3Port,
 		tmpl:      template.Must(template.New("admin").Parse(adminTemplate)),
 	}
 }
@@ -81,6 +84,7 @@ type bucketView struct {
 
 type adminObject struct {
 	Key         string
+	URL         string // absolute link to the object on the S3 server
 	Size        string
 	ContentType string
 	ACL         string
@@ -121,16 +125,20 @@ func (a *AdminServer) dashboard() dashboardView {
 }
 
 // bucketDetail returns the object rows for one bucket, or an error
-// (os.ErrNotExist / errInvalidName) the caller renders as a 404.
-func (a *AdminServer) bucketDetail(name string) (bucketView, error) {
+// (os.ErrNotExist / errInvalidName) the caller renders as a 404. objHost
+// is the host:port of the S3 server (from the request), used to build
+// each object's view-link.
+func (a *AdminServer) bucketDetail(name, objHost string) (bucketView, error) {
 	objs, err := a.storage.ListObjects(name)
 	if err != nil {
 		return bucketView{}, err
 	}
 	rows := make([]adminObject, 0, len(objs))
 	for _, o := range objs {
+		u := url.URL{Scheme: "http", Host: objHost, Path: "/" + name + "/" + o.Key}
 		rows = append(rows, adminObject{
 			Key:         o.Key,
+			URL:         u.String(),
 			Size:        humanBytes(o.Size),
 			ContentType: o.ContentType,
 			ACL:         o.ACL,
@@ -138,6 +146,16 @@ func (a *AdminServer) bucketDetail(name string) (bucketView, error) {
 		})
 	}
 	return bucketView{Name: name, Objects: rows}, nil
+}
+
+// s3Host derives the S3 server's host:port from the admin request's Host
+// header (same hostname the user is browsing) and the configured S3 port.
+func (a *AdminServer) s3Host(r *http.Request) string {
+	hostname := r.Host
+	if h, _, err := net.SplitHostPort(r.Host); err == nil {
+		hostname = h
+	}
+	return net.JoinHostPort(hostname, a.s3Port)
 }
 
 // --- handlers ---
@@ -163,7 +181,7 @@ func (a *AdminServer) handleFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
-	v, err := a.bucketDetail(r.PathValue("name"))
+	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r))
 	if err != nil {
 		a.notFound(w)
 		return
@@ -172,7 +190,7 @@ func (a *AdminServer) handleBucket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *AdminServer) handleBucketFragment(w http.ResponseWriter, r *http.Request) {
-	v, err := a.bucketDetail(r.PathValue("name"))
+	v, err := a.bucketDetail(r.PathValue("name"), a.s3Host(r))
 	if err != nil {
 		a.notFound(w)
 		return

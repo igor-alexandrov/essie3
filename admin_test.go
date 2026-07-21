@@ -16,7 +16,7 @@ func testAdminServer(t *testing.T) (*httptest.Server, *TrafficBroker) {
 	s.PutObject("assets", "a<b&c.txt", []byte("yy"), &ObjectMeta{ContentType: "text/plain"})
 	b := NewTrafficBroker(50)
 	fb, _ := NewFallback("testdata/fallback", DefaultInlineExtensions, FallbackModePool)
-	admin := NewAdminServer(s, fb, b, time.Now())
+	admin := NewAdminServer(s, fb, b, time.Now(), "9000")
 	srv := httptest.NewServer(admin.Handler())
 	t.Cleanup(srv.Close)
 	return srv, b
@@ -77,6 +77,10 @@ func TestAdmin_BucketPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("bucket page missing %q", want)
 		}
+	}
+	// Object keys link to the file on the S3 server (port 9000), new tab.
+	if !strings.Contains(body, `:9000/assets/logo.png" target="_blank"`) {
+		t.Errorf("bucket page missing object view-link; body:\n%s", body)
 	}
 	// Keys are HTML-escaped.
 	if strings.Contains(body, "a<b&c.txt") {

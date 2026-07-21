@@ -106,8 +106,11 @@ Listed here because the scope was deliberately trimmed:
 
 - **No upload / no delete / no runtime config** — every route is
   `GET`. This is the primary scope decision.
-- **No object viewing/download through the admin UI** — the dashboard
-  lists metadata only. To fetch an object, hit its S3 URL directly.
+- **The admin server never serves object bytes** — it lists metadata
+  only. Each object key on a bucket page links out to the object on the
+  S3 server (`http://<admin host>:<ESSIE3_PORT>/<bucket>/<key>`, opened
+  in a new tab); the admin port itself does not proxy or download
+  object content.
 - **No auth on the admin port** — loopback binding is the containment.
 - **No persistence of traffic** — the event ring buffer is in-memory
   and resets on restart.
