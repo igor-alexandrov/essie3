@@ -10,21 +10,21 @@ import (
 	"time"
 )
 
-// debugResponseWriter wraps an http.ResponseWriter so the debug
-// middleware can record the final status code and total bytes written
-// without changing what the client sees.
-type debugResponseWriter struct {
+// countingResponseWriter wraps an http.ResponseWriter so middleware can
+// record the final status code and total bytes written without changing
+// what the client sees. Shared by the debug and traffic middlewares.
+type countingResponseWriter struct {
 	http.ResponseWriter
 	status      int
 	bytes       int
 	wroteHeader bool
 }
 
-func newDebugResponseWriter(w http.ResponseWriter) *debugResponseWriter {
-	return &debugResponseWriter{ResponseWriter: w, status: http.StatusOK}
+func newCountingResponseWriter(w http.ResponseWriter) *countingResponseWriter {
+	return &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 }
 
-func (d *debugResponseWriter) WriteHeader(code int) {
+func (d *countingResponseWriter) WriteHeader(code int) {
 	if d.wroteHeader {
 		return
 	}
@@ -33,7 +33,7 @@ func (d *debugResponseWriter) WriteHeader(code int) {
 	d.ResponseWriter.WriteHeader(code)
 }
 
-func (d *debugResponseWriter) Write(p []byte) (int, error) {
+func (d *countingResponseWriter) Write(p []byte) (int, error) {
 	if !d.wroteHeader {
 		// Match net/http's implicit-200 behavior so a Write without a
 		// prior WriteHeader still has a meaningful captured status.
@@ -79,7 +79,7 @@ func writeHeaders(b *strings.Builder, h http.Header) {
 
 // formatResponse renders the multi-line response block: the `<-- CODE
 // STATUS (elapsed, N bytes)` line followed by sorted response headers.
-func formatResponse(d *debugResponseWriter, elapsed time.Duration) string {
+func formatResponse(d *countingResponseWriter, elapsed time.Duration) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<-- %d %s (%s, %d bytes)\n",
 		d.status, http.StatusText(d.status), elapsed, d.bytes)
@@ -97,7 +97,7 @@ func WithDebugLogging(next http.Handler, out io.Writer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		logger.Print(formatRequest(r))
-		drw := newDebugResponseWriter(w)
+		drw := newCountingResponseWriter(w)
 		next.ServeHTTP(drw, r)
 		logger.Print(formatResponse(drw, time.Since(start)))
 	})

@@ -1,0 +1,260 @@
+{{define "styles"}}<style>
+:root { --pico-spacing: 2rem; }
+a, summary { color: #2563eb; }
+a:hover, summary:hover { color: #1d4ed8; }
+@media (prefers-color-scheme: dark) { a, summary { color: #60a5fa; } a:hover, summary:hover { color: #93c5fd; } }
+.live { margin-left: 1.5rem; font-size: .45em; font-weight: normal; vertical-align: middle; color: #16a34a; letter-spacing: .05em; text-transform: uppercase; }
+.live .dot { display: inline-block; width: .6em; height: .6em; margin-right: .35em; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 0 rgba(34,197,94,.7); animation: live-pulse 1.5s ease-out infinite; }
+@keyframes live-pulse { 70% { box-shadow: 0 0 0 .6em rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+@media (prefers-reduced-motion: reduce) { .live .dot { animation: none; } }
+.stats { display: flex; flex-wrap: wrap; gap: 1rem; }
+.stat { flex: 1 1 8rem; text-align: center; padding: 1.25rem 1rem; background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); }
+.stat .num { display: block; font-size: 1.9rem; font-weight: 700; line-height: 1.2; }
+.stat .lbl { display: block; margin-top: .35rem; font-size: .8rem; color: var(--pico-muted-color); text-transform: uppercase; letter-spacing: .03em; }
+/* Tables (every page): tight cells, smaller font, zebra-striped even rows. */
+th, td { padding: .35rem .6rem; font-size: .8125rem; }
+tbody tr:nth-child(even) td { background-color: var(--pico-table-row-stripped-background-color); }
+/* Bucket page header: name on the left, compact search on the right. */
+.page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 1rem; }
+.page-head h2 { margin: 0; }
+.bucket-search { margin: 0; flex: 0 0 auto; }
+.bucket-search input { margin: 0; width: 15rem; max-width: 100%; font-size: .875rem; }
+/* Wide tables scroll within their box on small screens instead of
+   forcing the whole page to scroll horizontally. */
+.scroll-x { overflow-x: auto; }
+</style>{{end}}
+
+{{define "topbar"}}<header>
+<h1>essie3 <span class="live" title="Live — updates in real time"><span class="dot"></span>Live</span></h1>
+</header>{{end}}
+
+{{define "feed"}}<section>
+<h2>Live traffic</h2>
+<div class="scroll-x">
+<table>
+<thead>
+<tr><th>Time</th><th>Method</th><th>Bucket / key</th><th>Status</th><th>Outcome</th></tr>
+</thead>
+<tbody id="feed"></tbody>
+</table>
+</div>
+</section>{{end}}
+
+{{define "script"}}<script>
+(function () {
+  const cfg = window.__essie3 || { bucket: "" };
+  const feed = document.getElementById("feed");
+  // On a bucket page, carry the current ?q= filter into the soft-refresh
+  // so a live update keeps showing the filtered view.
+  const listUrl = cfg.bucket
+    ? "/buckets/" + encodeURIComponent(cfg.bucket) + "/fragment" + location.search
+    : "/fragment";
+
+  // Uptime is a pure client-side clock — no network, no polling.
+  function fmtUptime(sec) {
+    sec = Math.floor(sec);
+    const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600),
+          m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    if (d) return d + "d " + h + "h";
+    if (h) return h + "h " + m + "m";
+    if (m) return m + "m " + s + "s";
+    return s + "s";
+  }
+  const uptimeEl = document.getElementById("uptime");
+  if (uptimeEl && cfg.startedMs) {
+    const tick = function () { uptimeEl.textContent = fmtUptime((Date.now() - cfg.startedMs) / 1000); };
+    tick();
+    setInterval(tick, 1000);
+  }
+
+  function fetchInto(url, id, mode) {
+    fetch(url)
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html === null) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (mode === "inner") el.innerHTML = html; else el.outerHTML = html;
+      })
+      .catch(function () {});
+  }
+
+  // Live-feed cell builders. The path links to the object on the S3
+  // server (new tab) — but only when auth is off, since an
+  // unauthenticated browser GET of a non-public object would 403 and the
+  // client can't know each object's ACL.
+  function appendCell(tr, text) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+  }
+  function s3Url(bucket, key) {
+    const base = location.protocol + "//" + location.hostname + ":" + cfg.s3Port;
+    let p = "/" + encodeURIComponent(bucket);
+    if (key) p += "/" + key.split("/").map(encodeURIComponent).join("/");
+    return base + p;
+  }
+  function appendPathCell(tr, bucket, key) {
+    const td = document.createElement("td");
+    if (bucket) {
+      const label = key ? bucket + "/" + key : bucket;
+      if (!cfg.authEnabled && cfg.s3Port) {
+        const a = document.createElement("a");
+        a.href = s3Url(bucket, key);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = label;
+        td.appendChild(a);
+      } else {
+        td.textContent = label;
+      }
+    }
+    tr.appendChild(td);
+  }
+
+  const hasStats = !!document.getElementById("serverstats");
+  let listTimer = null, statsTimer = null;
+
+  const es = new EventSource("/events");
+  es.onmessage = function (ev) {
+    let e;
+    try { e = JSON.parse(ev.data); } catch (_) { return; }
+
+    if (feed) {
+      const tr = document.createElement("tr");
+      const when = e.time ? new Date(e.time).toLocaleTimeString() : "";
+      appendCell(tr, when);
+      appendCell(tr, e.method);
+      appendPathCell(tr, e.bucket, e.key);
+      appendCell(tr, e.status);
+      appendCell(tr, e.outcome);
+      feed.insertBefore(tr, feed.firstChild);
+      const limit = cfg.feedLimit || 200;
+      while (feed.childElementCount > limit) feed.removeChild(feed.lastChild);
+    }
+
+    // Server-derived stats (counts, hit rate) change on any request;
+    // refresh them event-driven and debounced — never on an idle timer.
+    if (hasStats) {
+      clearTimeout(statsTimer);
+      statsTimer = setTimeout(function () { fetchInto("/overview", "serverstats", "inner"); }, 500);
+    }
+
+    // The listing changes only on a matching write/delete.
+    if ((e.outcome === "write" || e.outcome === "delete") &&
+        (!cfg.bucket || e.bucket === cfg.bucket)) {
+      clearTimeout(listTimer);
+      listTimer = setTimeout(function () { fetchInto(listUrl, "content", "outer"); }, 750);
+    }
+  };
+})();
+</script>{{end}}
+
+{{define "dashboard"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>essie3 admin</title>
+<link rel="stylesheet" href="/assets/pico.classless.min.css">
+{{template "styles"}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+{{template "overview" .}}
+{{template "buckets_section" .}}
+{{template "feed" .}}
+</main>
+<script>window.__essie3 = { bucket: "", startedMs: {{.StartedMs}}, s3Port: "{{.S3Port}}", authEnabled: {{.AuthEnabled}}, feedLimit: {{.FeedLimit}} };</script>
+{{template "script"}}
+</body>
+</html>{{end}}
+
+{{define "overview"}}<section id="overview">
+<div class="stats">
+<div class="stat"><span class="num" id="uptime">{{.Uptime}}</span><span class="lbl">Uptime</span></div>
+<div id="serverstats" style="display:contents">{{template "overview_stats" .}}</div>
+</div>
+</section>{{end}}
+
+{{define "overview_stats"}}<div class="stat"><span class="num">{{.BucketCount}}</span><span class="lbl">Buckets</span></div>
+<div class="stat"><span class="num">{{.ObjectCount}}</span><span class="lbl">Objects</span></div>
+<div class="stat"><span class="num">{{.TotalBytes}}</span><span class="lbl">Total size</span></div>
+<div class="stat"><span class="num">{{.HitRate}}</span><span class="lbl">Fallback hit rate</span></div>{{end}}
+
+{{define "buckets_section"}}<section id="content">
+<h2>Buckets</h2>
+{{if .Buckets}}
+<div class="scroll-x">
+<table>
+<thead>
+<tr><th>Bucket</th><th>Objects</th><th>Size</th></tr>
+</thead>
+<tbody>
+{{range .Buckets}}
+<tr>
+<td><a href="{{.Path}}">{{.Name}}</a></td>
+<td>{{.ObjectCount}}</td>
+<td>{{.TotalBytes}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No buckets yet.</p>
+{{end}}
+</section>{{end}}
+
+{{define "bucket"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Name}} — essie3 admin</title>
+<link rel="stylesheet" href="/assets/pico.classless.min.css">
+{{template "styles"}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<p><a href="/">&larr; All buckets</a></p>
+<div class="page-head">
+<h2>{{.Name}}</h2>
+<form method="get" class="bucket-search">
+<input type="search" name="q" value="{{.Query}}" placeholder="Filter keys — substring or *.jpg" aria-label="Search keys">
+</form>
+</div>
+{{template "bucket_content" .}}
+</main>
+<script>window.__essie3 = { bucket: "{{.Name}}" };</script>
+{{template "script"}}
+</body>
+</html>{{end}}
+
+{{define "bucket_content"}}<section id="content">
+{{if .Query}}<p><small>{{len .Objects}} of {{.Total}} object(s) match &ldquo;{{.Query}}&rdquo;.</small></p>{{end}}
+{{if .Objects}}
+<div class="scroll-x">
+<table>
+<thead>
+<tr><th>Key</th><th>Size</th><th>Content-Type</th><th>ACL</th><th>Created</th></tr>
+</thead>
+<tbody>
+{{range .Objects}}
+<tr>
+<td>{{if .Viewable}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Key}}</a>{{else}}<span title="Not public-read — a browser view would be denied while auth is enabled">{{.Key}}</span>{{end}}</td>
+<td>{{.Size}}</td>
+<td>{{.ContentType}}</td>
+<td>{{.ACL}}</td>
+<td>{{.Created}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>{{if .Query}}No keys match &ldquo;{{.Query}}&rdquo;.{{else}}No objects.{{end}}</p>
+{{end}}
+</section>{{end}}

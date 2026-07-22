@@ -49,7 +49,7 @@ func (h *Handler) setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "ETag, Location, x-amz-request-id")
+	w.Header().Set("Access-Control-Expose-Headers", "ETag, Location, x-amz-request-id, X-Essie3-Fallback")
 }
 
 func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket string) {
@@ -186,6 +186,11 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 			out := evaluateRange(r, totalLen, p.ETag)
 			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
+			if p.Generated {
+				w.Header().Set("X-Essie3-Fallback", "generate")
+			} else {
+				w.Header().Set("X-Essie3-Fallback", "pool")
+			}
 			if p.ETag != "" {
 				w.Header().Set("ETag", p.ETag)
 			}
@@ -271,6 +276,11 @@ func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucke
 			out := evaluateRange(r, totalLen, p.ETag)
 			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Type", p.ContentType)
+			if p.Generated {
+				w.Header().Set("X-Essie3-Fallback", "generate")
+			} else {
+				w.Header().Set("X-Essie3-Fallback", "pool")
+			}
 			if p.ETag != "" {
 				w.Header().Set("ETag", p.ETag)
 			}

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -169,5 +170,116 @@ func TestStorage_DeleteObject_MissingFilesReturnsNil(t *testing.T) {
 
 	if err := s.DeleteObject("b", "never-existed.txt"); err != nil {
 		t.Errorf("DeleteObject on never-existed key = %v, want nil (idempotent)", err)
+	}
+}
+
+func TestListBuckets(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	s.PutObject("beta", "one.txt", []byte("hello"), &ObjectMeta{ContentType: "text/plain"})     // 5
+	s.PutObject("beta", "two.txt", []byte("worldwide"), &ObjectMeta{ContentType: "text/plain"}) // 9
+	s.PutObject("alpha", "x", []byte("z"), &ObjectMeta{ContentType: "text/plain"})              // 1
+
+	buckets, err := s.ListBuckets()
+	if err != nil {
+		t.Fatalf("ListBuckets: %v", err)
+	}
+	if len(buckets) != 2 {
+		t.Fatalf("got %d buckets, want 2: %+v", len(buckets), buckets)
+	}
+	// Sorted by name: alpha, beta.
+	if buckets[0].Name != "alpha" || buckets[1].Name != "beta" {
+		t.Fatalf("buckets not sorted: %+v", buckets)
+	}
+	if buckets[0].ObjectCount != 1 || buckets[0].TotalBytes != 1 {
+		t.Errorf("alpha = %+v, want count 1 size 1", buckets[0])
+	}
+	// Sidecars must not be counted as objects.
+	if buckets[1].ObjectCount != 2 {
+		t.Errorf("beta count = %d, want 2 (sidecars excluded)", buckets[1].ObjectCount)
+	}
+	if buckets[1].TotalBytes != 14 {
+		t.Errorf("beta size = %d, want 14", buckets[1].TotalBytes)
+	}
+}
+
+func TestListBuckets_MissingDataDir(t *testing.T) {
+	s := NewStorage(filepath.Join(t.TempDir(), "does-not-exist"))
+	buckets, err := s.ListBuckets()
+	if err != nil {
+		t.Fatalf("ListBuckets on missing dataDir = %v, want nil", err)
+	}
+	if len(buckets) != 0 {
+		t.Fatalf("got %d buckets, want 0", len(buckets))
+	}
+}
+
+func TestListObjects(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	s.PutObject("b", "deep/nested/f.txt", []byte("data"), &ObjectMeta{ContentType: "text/plain", ACL: "public-read"})
+	s.PutObject("b", "a.txt", []byte("hi"), &ObjectMeta{ContentType: "text/plain"})
+
+	objs, err := s.ListObjects("b")
+	if err != nil {
+		t.Fatalf("ListObjects: %v", err)
+	}
+	if len(objs) != 2 {
+		t.Fatalf("got %d objects, want 2: %+v", len(objs), objs)
+	}
+	// Sorted by key: "a.txt" < "deep/nested/f.txt".
+	if objs[0].Key != "a.txt" {
+		t.Errorf("objs[0].Key = %q, want a.txt", objs[0].Key)
+	}
+	if objs[1].Key != "deep/nested/f.txt" {
+		t.Errorf("objs[1].Key = %q, want deep/nested/f.txt (forward slashes)", objs[1].Key)
+	}
+	if objs[1].ContentType != "text/plain" || objs[1].ACL != "public-read" {
+		t.Errorf("nested object meta wrong: %+v", objs[1])
+	}
+	if objs[1].Size != 4 {
+		t.Errorf("nested object size = %d, want 4", objs[1].Size)
+	}
+	if objs[1].CreatedAt.IsZero() {
+		t.Errorf("nested object CreatedAt should be set from meta")
+	}
+}
+
+func TestListObjects_MissingSidecar(t *testing.T) {
+	s := NewStorage(t.TempDir())
+	// Write a raw body with no .meta.json sidecar.
+	dir := filepath.Join(s.dataDir, "b")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "orphan.txt"), []byte("orphaned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	objs, err := s.ListObjects("b")
+	if err != nil {
+		t.Fatalf("ListObjects: %v", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("got %d objects, want 1", len(objs))
+	}
+	o := objs[0]
+	if o.Key != "orphan.txt" {
+		t.Errorf("key = %q, want orphan.txt", o.Key)
+	}
+	if o.Size != 8 {
+		t.Errorf("size = %d, want 8 (on-disk fallback)", o.Size)
+	}
+	if !o.CreatedAt.IsZero() {
+		t.Errorf("CreatedAt = %v, want zero for missing meta", o.CreatedAt)
+	}
+}
+
+func TestListObjects_UnknownBucketAndInvalidName(t *testing.T) {
+	s := NewStorage(t.TempDir())
+
+	if _, err := s.ListObjects("nope"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("ListObjects(nope) err = %v, want os.ErrNotExist", err)
+	}
+	if _, err := s.ListObjects(".."); !errors.Is(err, errInvalidName) {
+		t.Errorf("ListObjects(..) err = %v, want errInvalidName", err)
 	}
 }

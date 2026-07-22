@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,10 +14,20 @@ import (
 	"time"
 )
 
+// trafficRingSize is how many recent requests the admin dashboard's
+// live feed retains and shows: it sizes the in-memory ring buffer (the
+// SSE backlog) and, passed through to the page, caps the feed's rows.
+const trafficRingSize = 200
+
 func main() {
+	startedAt := time.Now()
 	port := getenv("ESSIE3_PORT", "9000")
 	dataDir := getenv("ESSIE3_DATA_DIR", "./data")
 	fallbackDataDir := getenv("ESSIE3_FALLBACK_DATA_DIR", "./fallback-data")
+	adminPort := os.Getenv("ESSIE3_ADMIN_PORT")
+	// Loopback by default (the admin surface is unauthenticated). Set to
+	// 0.0.0.0 to reach it through a container's published port.
+	adminHost := getenv("ESSIE3_ADMIN_HOST", "127.0.0.1")
 
 	storage := NewStorage(dataDir)
 	inlineExts := DefaultInlineExtensions
@@ -53,8 +64,16 @@ func main() {
 	if debug {
 		fmt.Printf("  debug:    enabled\n")
 	}
+	if adminPort != "" {
+		fmt.Printf("  admin:    http://%s\n", net.JoinHostPort(adminHost, adminPort))
+	}
 
 	var handler http.Handler = NewHandler(storage, fallback, auth)
+	var broker *TrafficBroker
+	if adminPort != "" {
+		broker = NewTrafficBroker(trafficRingSize)
+		handler = WithTrafficCapture(handler, broker)
+	}
 	if debug {
 		handler = WithDebugLogging(handler, os.Stderr)
 	}
@@ -65,6 +84,23 @@ func main() {
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
+	}
+
+	// Admin dashboard on its own loopback port. No WriteTimeout: it
+	// would sever long-lived SSE connections.
+	var adminSrv *http.Server
+	if broker != nil {
+		admin := NewAdminServer(storage, fallback, broker, startedAt, port, auth.Enabled())
+		adminSrv = &http.Server{
+			Addr:              net.JoinHostPort(adminHost, adminPort),
+			Handler:           admin.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Printf("admin server error: %v", err)
+			}
+		}()
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -87,6 +123,11 @@ func main() {
 		log.Println("shutdown signal received")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		if adminSrv != nil {
+			if err := adminSrv.Shutdown(shutdownCtx); err != nil {
+				log.Printf("admin shutdown: %v", err)
+			}
+		}
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Fatalf("shutdown: %v", err)
 		}

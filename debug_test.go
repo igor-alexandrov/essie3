@@ -11,7 +11,7 @@ import (
 
 func TestDebugResponseWriter_DefaultStatusIs200(t *testing.T) {
 	rec := httptest.NewRecorder()
-	drw := newDebugResponseWriter(rec)
+	drw := newCountingResponseWriter(rec)
 
 	// No WriteHeader call before Write — Go's net/http treats this as 200 OK.
 	if _, err := drw.Write([]byte("hello")); err != nil {
@@ -28,7 +28,7 @@ func TestDebugResponseWriter_DefaultStatusIs200(t *testing.T) {
 
 func TestDebugResponseWriter_CapturesExplicitStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
-	drw := newDebugResponseWriter(rec)
+	drw := newCountingResponseWriter(rec)
 
 	drw.WriteHeader(http.StatusForbidden)
 	if _, err := drw.Write([]byte("denied")); err != nil {
@@ -51,7 +51,7 @@ func TestDebugResponseWriter_CapturesExplicitStatus(t *testing.T) {
 
 func TestDebugResponseWriter_HeaderDelegates(t *testing.T) {
 	rec := httptest.NewRecorder()
-	drw := newDebugResponseWriter(rec)
+	drw := newCountingResponseWriter(rec)
 
 	drw.Header().Set("X-Foo", "bar")
 	if got := rec.Header().Get("X-Foo"); got != "bar" {
@@ -117,7 +117,7 @@ func TestFormatRequest_HeadersAreSorted(t *testing.T) {
 
 func TestFormatResponse_BasicOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	drw := newDebugResponseWriter(rec)
+	drw := newCountingResponseWriter(rec)
 	drw.Header().Set("Etag", `"abc"`)
 	drw.WriteHeader(http.StatusOK)
 	drw.Write([]byte("hello"))
@@ -133,7 +133,7 @@ func TestFormatResponse_BasicOK(t *testing.T) {
 
 func TestFormatResponse_ForbiddenWithSortedHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
-	drw := newDebugResponseWriter(rec)
+	drw := newCountingResponseWriter(rec)
 	drw.Header().Set("X-Amz-Request-Id", "req-1")
 	drw.Header().Set("Content-Type", "application/xml")
 	drw.WriteHeader(http.StatusForbidden)

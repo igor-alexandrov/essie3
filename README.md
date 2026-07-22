@@ -47,6 +47,7 @@ That's it. Point any S3 client at `http://localhost:9000` and go.
 - [Range requests](#range-requests)
 - [Auth (optional)](#auth-optional)
 - [Fallback placeholders](#fallback-placeholders)
+- [Admin dashboard](#admin-dashboard)
 - [Storage layout](#storage-layout)
 - [Development](#development)
 - [License](#license)
@@ -119,6 +120,8 @@ have dedicated sections below with the full details.
 | `ESSIE3_ACCESS_KEY`                 | *(unset)*         | When set, requires this access key on requests. See [Auth](#auth-optional). |
 | `ESSIE3_FALLBACK_PUBLIC`            | `false`           | When auth is on, `true` serves fallbacks anonymously. See [Auth](#auth-optional). |
 | `ESSIE3_DEBUG`                      | *(unset)*         | When `true`, logs full request/response details to stderr.                  |
+| `ESSIE3_ADMIN_PORT`                 | *(unset)*         | When set, serves the read-only admin dashboard on this port. See [Admin dashboard](#admin-dashboard). |
+| `ESSIE3_ADMIN_HOST`                 | `127.0.0.1`       | Interface the admin dashboard binds. Set to `0.0.0.0` to reach it through a container's published port. See [Admin dashboard](#admin-dashboard). |
 
 ## Usage
 
@@ -289,6 +292,65 @@ The default inline set is:
 .jpg  .jpeg  .png  .gif  .webp  .pdf  .mp4  .mov  .webm  .avi
 ```
 
+## Admin dashboard
+
+Set `ESSIE3_ADMIN_PORT` to serve a small **read-only** web dashboard for
+inspecting a running server:
+
+```sh
+ESSIE3_ADMIN_PORT=9001 go run .
+# open http://127.0.0.1:9001
+```
+
+![essie3 admin dashboard: overview stat blocks, the bucket list, and the live traffic feed](.github/assets/admin-dashboard.png)
+
+The dashboard (`/`) has three sections:
+
+- **Overview** — uptime, bucket count, total objects, total size on disk,
+  and the fallback hit rate. Live: uptime ticks client-side and the stats
+  refresh as requests arrive.
+- **Buckets** — every bucket with its object count and size; each name
+  links to that bucket's own page listing its objects (key, size,
+  content-type, ACL, created-at). Each bucket page has a **search box**
+  to filter keys — a case-insensitive substring, or a glob like `*.jpg`
+  or `dir/*` (matched in-process, no shelling out). Object keys link to
+  the file on the S3 server, opened in a new tab. When auth is enabled,
+  only `public-read` objects are linked (others would be denied to an
+  unauthenticated browser); they show as plain text instead.
+- **Live traffic** — every request streamed in as it happens (method,
+  bucket/key, status, and outcome: `real`, `fallback`, `miss`, `denied`,
+  `write`, or `delete`), over Server-Sent Events. The bucket/key links to
+  the object on the S3 server (new tab; omitted when auth is on). Writes
+  and deletes also soft-refresh the listing, so new objects appear
+  without a reload.
+
+Each bucket has its own page listing its objects, with a search box to
+filter keys:
+
+![essie3 admin bucket page: object listing with key/size/type/ACL/created columns and a key filter](.github/assets/admin-bucket.png)
+
+The dashboard is **observational only** — no upload, delete, or
+configuration. It is served on a **separate port** so it never collides
+with the S3 API, and binds `127.0.0.1` by default since it has no
+authentication of its own. Leave `ESSIE3_ADMIN_PORT` unset to disable it
+entirely (the default).
+
+> [!IMPORTANT]
+> **In Docker**, a process bound to `127.0.0.1` inside the container is
+> unreachable through a published port — Docker forwards to the
+> container's external interface, not its loopback. Set
+> `ESSIE3_ADMIN_HOST=0.0.0.0` so the dashboard binds all interfaces
+> inside the container; the container boundary and your `ports:` mapping
+> then control exposure. For example:
+>
+> ```yaml
+> environment:
+>   ESSIE3_ADMIN_PORT: "9001"
+>   ESSIE3_ADMIN_HOST: "0.0.0.0"
+> ports:
+>   - "9001:9001"
+> ```
+
 ## Storage layout
 
 ```text
@@ -317,3 +379,7 @@ gofmt -l .        # lists files needing formatting
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The admin dashboard bundles [Pico.css](https://picocss.com) (classless
+build, v2.0.6), vendored as `pico.classless.min.css` and also licensed
+under MIT.
