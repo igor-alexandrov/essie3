@@ -107,6 +107,38 @@ func TestHandler_PutAndGetObject(t *testing.T) {
 	}
 }
 
+func TestHandler_GetObject_ResponseContentDispositionOverridesStoredMetadata(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	put, _ := http.NewRequest("PUT", srv.URL+"/bucket/report.txt", strings.NewReader("report"))
+	put.Header.Set("Content-Disposition", `inline; filename="stored.txt"`)
+	if resp, err := http.DefaultClient.Do(put); err != nil {
+		t.Fatal(err)
+	} else {
+		resp.Body.Close()
+	}
+
+	resp, err := http.Get(srv.URL + "/bucket/report.txt?response-content-disposition=attachment%3B+filename%3D%22download.txt%22")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := resp.Header.Get("Content-Disposition"), `attachment; filename="download.txt"`; got != want {
+		t.Errorf("Content-Disposition = %q, want %q", got, want)
+	}
+	resp.Body.Close()
+
+	resp, err = http.Get(srv.URL + "/bucket/report.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if got, want := resp.Header.Get("Content-Disposition"), `inline; filename="stored.txt"`; got != want {
+		t.Errorf("Content-Disposition after override = %q, want %q", got, want)
+	}
+}
+
 func TestHandler_HeadObject(t *testing.T) {
 	srv := testServer(t)
 	defer srv.Close()
@@ -368,6 +400,26 @@ func TestHandler_GetWithRange(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "hello" {
 		t.Errorf("body = %q, want %q", body, "hello")
+	}
+}
+
+func TestHandler_GetFallbackWithRange_ResponseContentDispositionOverride(t *testing.T) {
+	srv := testServer(t)
+	defer srv.Close()
+
+	req, _ := http.NewRequest("GET", srv.URL+"/bucket/missing/photo.jpg?response-content-disposition=attachment%3B+filename%3D%22photo-download.jpg%22", nil)
+	req.Header.Set("Range", "bytes=0-4")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusPartialContent)
+	}
+	if got, want := resp.Header.Get("Content-Disposition"), `attachment; filename="photo-download.jpg"`; got != want {
+		t.Errorf("Content-Disposition = %q, want %q", got, want)
 	}
 }
 
@@ -945,6 +997,9 @@ func TestHandler_FallbackHeader_PoolMode(t *testing.T) {
 	}
 	if exp := resp.Header.Get("Access-Control-Expose-Headers"); !strings.Contains(exp, "X-Essie3-Fallback") {
 		t.Errorf("Expose-Headers = %q, want it to include X-Essie3-Fallback", exp)
+	}
+	if exp := resp.Header.Get("Access-Control-Expose-Headers"); !strings.Contains(exp, "Content-Disposition") {
+		t.Errorf("Expose-Headers = %q, want it to include Content-Disposition", exp)
 	}
 }
 

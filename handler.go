@@ -49,7 +49,7 @@ func (h *Handler) setCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "ETag, Location, x-amz-request-id, X-Essie3-Fallback")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition, ETag, Location, x-amz-request-id, X-Essie3-Fallback")
 }
 
 func (h *Handler) handleBucket(w http.ResponseWriter, r *http.Request, bucket string) {
@@ -197,7 +197,7 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 			if p.Generated {
 				w.Header().Set("Last-Modified", h.fallback.LastModified().Format(http.TimeFormat))
 			}
-			w.Header().Set("Content-Disposition", h.fallback.Disposition(key))
+			w.Header().Set("Content-Disposition", responseContentDisposition(r, h.fallback.Disposition(key)))
 			switch {
 			case out.serveFull:
 				w.Header().Set("Content-Length", strconv.FormatInt(totalLen, 10))
@@ -233,8 +233,8 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 	w.Header().Set("Content-Type", obj.Meta.ContentType)
 	w.Header().Set("ETag", obj.Meta.ETag)
 	w.Header().Set("Last-Modified", obj.Meta.CreatedAt.UTC().Format(http.TimeFormat))
-	if obj.Meta.ContentDisposition != "" {
-		w.Header().Set("Content-Disposition", obj.Meta.ContentDisposition)
+	if disposition := responseContentDisposition(r, obj.Meta.ContentDisposition); disposition != "" {
+		w.Header().Set("Content-Disposition", disposition)
 	}
 	switch {
 	case out.serveFull:
@@ -250,6 +250,15 @@ func (h *Handler) handleGetObject(w http.ResponseWriter, r *http.Request, bucket
 	default:
 		writeInvalidRange(w, bucket, key, totalLen)
 	}
+}
+
+// responseContentDisposition returns the S3 GetObject query override when
+// present. The override affects only this response; object metadata is unchanged.
+func responseContentDisposition(r *http.Request, stored string) string {
+	if override := r.URL.Query().Get("response-content-disposition"); override != "" {
+		return override
+	}
+	return stored
 }
 
 func (h *Handler) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
