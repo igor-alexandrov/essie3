@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">essie3</title>
-  <desc id="desc">A storage bucket overflowing with translucent bubbles, echoing the bubble identicons essie3 serves for missing objects.</desc>
+  <desc id="desc">A storage bucket holding a placeholder image and translucent bubbles: the curated fallback files and generated bubble identicons essie3 serves for missing objects.</desc>
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#243049"/>
@@ -11,6 +11,9 @@
       <stop offset="0.55" stop-color="#eef1f6"/>
       <stop offset="1" stop-color="#c3ccdb"/>
     </linearGradient>
+    <clipPath id="picture">
+      <rect x="124" y="104" width="122" height="104" rx="8"/>
+    </clipPath>
   </defs>
 
   <rect width="512" height="512" rx="112" fill="url(#tile)"/>
@@ -18,15 +21,24 @@
   <!-- bucket mouth -->
   <ellipse cx="256" cy="262" rx="150" ry="34" fill="#0b101b"/>
 
-  <!-- bubbles: colors from the D3 category20 palette used by generate.go -->
+  <!-- curated fallback: a placeholder image file -->
+  <g transform="rotate(-10 185 190)">
+    <rect x="110" y="90" width="150" height="200" rx="16" fill="#ffffff"/>
+    <g clip-path="url(#picture)">
+      <rect x="124" y="104" width="122" height="104" fill="#aec7e8"/>
+      <circle cx="216" cy="132" r="13" fill="#ffbb78"/>
+      <path d="M112 208 L164 146 L196 184 L212 166 L258 208 Z" fill="#1f77b4"/>
+    </g>
+  </g>
+
+  <!-- generated fallback: bubbles in the D3 category20 colors used by generate.go -->
   <g fill-opacity="0.88">
-    <circle cx="196" cy="222" r="70" fill="#17becf"/>
-    <circle cx="304" cy="206" r="84" fill="#f7b6d2"/>
-    <circle cx="246" cy="160" r="52" fill="#ff9896"/>
-    <circle cx="352" cy="246" r="44" fill="#c5b0d5"/>
-    <circle cx="160" cy="146" r="30" fill="#ffbb78"/>
-    <circle cx="338" cy="100" r="24" fill="#9edae5"/>
-    <circle cx="232" cy="76" r="14" fill="#f7b6d2"/>
+    <circle cx="326" cy="204" r="76" fill="#f7b6d2"/>
+    <circle cx="278" cy="238" r="46" fill="#17becf"/>
+    <circle cx="372" cy="250" r="40" fill="#c5b0d5"/>
+    <circle cx="300" cy="126" r="34" fill="#ff9896"/>
+    <circle cx="388" cy="112" r="22" fill="#9edae5"/>
+    <circle cx="336" cy="70" r="13" fill="#ffbb78"/>
   </g>
 
   <!-- bucket body -->
