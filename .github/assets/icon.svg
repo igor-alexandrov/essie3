@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">essie3</title>
+  <desc id="desc">A storage bucket overflowing with translucent bubbles, echoing the bubble identicons essie3 serves for missing objects.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#243049"/>
+      <stop offset="1" stop-color="#141b2b"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#eef1f6"/>
+      <stop offset="1" stop-color="#c3ccdb"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+
+  <!-- bucket mouth -->
+  <ellipse cx="256" cy="262" rx="150" ry="34" fill="#0b101b"/>
+
+  <!-- bubbles: colors from the D3 category20 palette used by generate.go -->
+  <g fill-opacity="0.88">
+    <circle cx="196" cy="222" r="70" fill="#17becf"/>
+    <circle cx="304" cy="206" r="84" fill="#f7b6d2"/>
+    <circle cx="246" cy="160" r="52" fill="#ff9896"/>
+    <circle cx="352" cy="246" r="44" fill="#c5b0d5"/>
+    <circle cx="160" cy="146" r="30" fill="#ffbb78"/>
+    <circle cx="338" cy="100" r="24" fill="#9edae5"/>
+    <circle cx="232" cy="76" r="14" fill="#f7b6d2"/>
+  </g>
+
+  <!-- bucket body -->
+  <path d="M106 262 A150 34 0 0 0 406 262 L378 428 A122 26 0 0 1 134 428 Z" fill="url(#body)"/>
+  <path d="M112.4 300 A143.6 32.5 0 0 0 399.6 300 L394.2 332 A138.2 31.3 0 0 1 117.8 332 Z" fill="#1f77b4"/>
+  <path d="M125.6 378 A130.4 28.5 0 0 0 386.4 378 L384.4 390 A128.4 28 0 0 1 127.6 390 Z" fill="#aec7e8"/>
+  <path d="M106 262 A150 34 0 0 0 406 262" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+</svg>
