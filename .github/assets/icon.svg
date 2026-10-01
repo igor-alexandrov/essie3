@@ -26,9 +26,9 @@
     <use href="#fold" fill="#1f77b4"/>
   </g>
   <g transform="rotate(-11 185 190)">
-    <use href="#file" fill="#ffffff"/>
-    <use href="#fold" fill="#c3ccdb"/>
-    <g fill="#c3ccdb">
+    <use href="#file" fill="#fff0d9"/>
+    <use href="#fold" fill="#f3cd9a"/>
+    <g fill="#eccb9d">
       <rect x="132" y="150" width="72" height="12" rx="6"/>
       <rect x="132" y="178" width="106" height="12" rx="6"/>
       <rect x="132" y="206" width="106" height="12" rx="6"/>
