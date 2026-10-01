@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/icon.svg" alt="essie3 icon: a bucket holding a placeholder image and colorful bubbles" width="128" height="128">
+  <img src=".github/assets/icon.svg" alt="essie3 icon: a bucket holding placeholder files and colorful bubbles" width="128" height="128">
 </p>
 
 <h1 align="center">essie3</h1>

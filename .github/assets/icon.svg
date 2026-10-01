@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">essie3</title>
-  <desc id="desc">A storage bucket holding a placeholder image and translucent bubbles: the curated fallback files and generated bubble identicons essie3 serves for missing objects.</desc>
+  <desc id="desc">A storage bucket holding placeholder files and translucent bubbles: the curated fallback files and generated bubble identicons essie3 serves for missing objects.</desc>
   <defs>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#243049"/>
@@ -11,9 +11,8 @@
       <stop offset="0.55" stop-color="#eef1f6"/>
       <stop offset="1" stop-color="#c3ccdb"/>
     </linearGradient>
-    <clipPath id="picture">
-      <rect x="124" y="104" width="122" height="104" rx="8"/>
-    </clipPath>
+    <path id="file" d="M126 90 H216 L260 134 V274 A16 16 0 0 1 244 290 H126 A16 16 0 0 1 110 274 V106 A16 16 0 0 1 126 90 Z"/>
+    <path id="fold" d="M216 90 V120 A14 14 0 0 0 230 134 H260 Z"/>
   </defs>
 
   <rect width="512" height="512" rx="112" fill="url(#tile)"/>
@@ -21,13 +20,18 @@
   <!-- bucket mouth -->
   <ellipse cx="256" cy="262" rx="150" ry="34" fill="#0b101b"/>
 
-  <!-- curated fallback: a placeholder image file -->
-  <g transform="rotate(-10 185 190)">
-    <rect x="110" y="90" width="150" height="200" rx="16" fill="#ffffff"/>
-    <g clip-path="url(#picture)">
-      <rect x="124" y="104" width="122" height="104" fill="#aec7e8"/>
-      <circle cx="216" cy="132" r="13" fill="#ffbb78"/>
-      <path d="M112 208 L164 146 L196 184 L212 166 L258 208 Z" fill="#1f77b4"/>
+  <!-- curated fallback: placeholder files of any type -->
+  <g transform="translate(34 -26) rotate(8 185 190)">
+    <use href="#file" fill="#aec7e8"/>
+    <use href="#fold" fill="#1f77b4"/>
+  </g>
+  <g transform="rotate(-11 185 190)">
+    <use href="#file" fill="#ffffff"/>
+    <use href="#fold" fill="#c3ccdb"/>
+    <g fill="#c3ccdb">
+      <rect x="132" y="150" width="72" height="12" rx="6"/>
+      <rect x="132" y="178" width="106" height="12" rx="6"/>
+      <rect x="132" y="206" width="106" height="12" rx="6"/>
     </g>
   </g>
 
