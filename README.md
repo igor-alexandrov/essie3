@@ -1,11 +1,19 @@
-# essie3
+<p align="center">
+  <img src=".github/assets/icon.svg" alt="essie3 icon: a bucket holding placeholder files and colorful bubbles" width="128" height="128">
+</p>
 
-**A tiny, filesystem-backed S3-compatible server for local development and testing.**
+<h1 align="center">essie3</h1>
 
-[![Release](https://img.shields.io/github/v/release/igor-alexandrov/essie3?sort=semver)](https://github.com/igor-alexandrov/essie3/releases)
-[![CI](https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml/badge.svg)](https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/github/go-mod/go-version/igor-alexandrov/essie3)](go.mod)
-[![License](https://img.shields.io/github/license/igor-alexandrov/essie3)](LICENSE)
+<p align="center">
+  <strong>A tiny, filesystem-backed S3-compatible server for local development and testing.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/igor-alexandrov/essie3/releases"><img src="https://img.shields.io/github/v/release/igor-alexandrov/essie3?sort=semver" alt="Release"></a>
+  <a href="https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml"><img src="https://github.com/igor-alexandrov/essie3/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/igor-alexandrov/essie3" alt="Go"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/igor-alexandrov/essie3" alt="License"></a>
+</p>
 
 essie3 speaks enough of the S3 REST API to stand in for AWS S3 when running
 integration tests, demos, or offline dev environments. It's a single Go

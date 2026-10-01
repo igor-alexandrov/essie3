@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">essie3</title>
+  <desc id="desc">A storage bucket holding placeholder files and translucent bubbles: the curated fallback files and generated bubble identicons essie3 serves for missing objects.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#243049"/>
+      <stop offset="1" stop-color="#141b2b"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#eef1f6"/>
+      <stop offset="1" stop-color="#c3ccdb"/>
+    </linearGradient>
+    <path id="file" d="M126 90 H216 L260 134 V274 A16 16 0 0 1 244 290 H126 A16 16 0 0 1 110 274 V106 A16 16 0 0 1 126 90 Z"/>
+    <path id="fold" d="M216 90 V120 A14 14 0 0 0 230 134 H260 Z"/>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+
+  <!-- bucket mouth -->
+  <ellipse cx="256" cy="262" rx="150" ry="34" fill="#0b101b"/>
+
+  <!-- curated fallback: placeholder files of any type -->
+  <g transform="translate(34 -26) rotate(8 185 190)">
+    <use href="#file" fill="#aec7e8"/>
+    <use href="#fold" fill="#1f77b4"/>
+  </g>
+  <g transform="rotate(-11 185 190)">
+    <use href="#file" fill="#fff0d9"/>
+    <use href="#fold" fill="#f3cd9a"/>
+    <g fill="#eccb9d">
+      <rect x="132" y="150" width="72" height="12" rx="6"/>
+      <rect x="132" y="178" width="106" height="12" rx="6"/>
+      <rect x="132" y="206" width="106" height="12" rx="6"/>
+    </g>
+  </g>
+
+  <!-- generated fallback: bubbles in the D3 category20 colors used by generate.go -->
+  <g fill-opacity="0.88">
+    <circle cx="326" cy="204" r="76" fill="#f7b6d2"/>
+    <circle cx="278" cy="238" r="46" fill="#17becf"/>
+    <circle cx="372" cy="250" r="40" fill="#c5b0d5"/>
+    <circle cx="300" cy="126" r="34" fill="#ff9896"/>
+    <circle cx="388" cy="112" r="22" fill="#9edae5"/>
+    <circle cx="336" cy="70" r="13" fill="#ffbb78"/>
+  </g>
+
+  <!-- bucket body -->
+  <path d="M106 262 A150 34 0 0 0 406 262 L378 428 A122 26 0 0 1 134 428 Z" fill="url(#body)"/>
+  <path d="M112.4 300 A143.6 32.5 0 0 0 399.6 300 L394.2 332 A138.2 31.3 0 0 1 117.8 332 Z" fill="#1f77b4"/>
+  <path d="M125.6 378 A130.4 28.5 0 0 0 386.4 378 L384.4 390 A128.4 28 0 0 1 127.6 390 Z" fill="#aec7e8"/>
+  <path d="M106 262 A150 34 0 0 0 406 262" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+</svg>
